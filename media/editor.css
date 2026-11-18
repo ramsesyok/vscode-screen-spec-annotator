@@ -1,0 +1,86 @@
+:root { color-scheme: light dark; }
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family, sans-serif);
+}
+[hidden] { display: none !important; }
+button, textarea { font: inherit; }
+button {
+  padding: 4px 9px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+button[aria-pressed="true"] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+button:disabled { opacity: .55; cursor: default; }
+:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+
+#editor {
+  --image-height: 65%;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: minmax(0, var(--image-height)) 7px minmax(0, 1fr);
+}
+#image-panel { min-height: 0; display: flex; flex-direction: column; }
+.toolbar, #notice, #json-actions { padding: 7px 10px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+#zoom { min-width: 4ch; text-align: center; }
+#notice { background: var(--vscode-editorWidget-background); overflow-wrap: anywhere; }
+#viewport {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--vscode-sideBar-background);
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+}
+#viewport.pan { cursor: grab; }
+#viewport.pan:active { cursor: grabbing; }
+#surface { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#original { display: block; pointer-events: none; }
+#annotations { position: absolute; inset: 0; width: 100%; height: 100%; }
+.region, .marker, .handle { stroke: #113a60; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.region { fill: transparent; cursor: move; }
+.selected .region { stroke: #097ee3; }
+.marker { fill: #fff; cursor: move; }
+.marker-text { fill: #0b253d; text-anchor: middle; dominant-baseline: central; font-weight: 700; pointer-events: none; }
+.handle { fill: #fff; stroke: #097ee3; cursor: crosshair; }
+.preview { stroke-dasharray: 4 3; pointer-events: none; }
+.pan .region, .pan .marker { cursor: inherit; }
+
+#splitter {
+  cursor: row-resize;
+  touch-action: none;
+  background: var(--vscode-panel-border, var(--vscode-editorWidget-background));
+}
+#splitter:hover, #splitter:focus-visible { background: var(--vscode-focusBorder); }
+#table-panel { min-height: 0; overflow: auto; padding: 8px 10px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border-bottom: 1px solid var(--vscode-panel-border); padding: 5px; text-align: left; }
+th:first-child { width: 5ch; }
+tr.selected { background: var(--vscode-list-inactiveSelectionBackground); }
+textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 100px;
+  min-height: 28px;
+  line-height: 1.4;
+  resize: vertical;
+  padding: 4px 6px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+}
+#empty { margin: 8px 5px; color: var(--vscode-descriptionForeground); }

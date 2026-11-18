@@ -1,0 +1,53 @@
+{
+  "name": "vscode-screen-spec-annotator",
+  "displayName": "Screen Spec Annotator",
+  "description": "スクリーンショット上の領域に番号を付け、画面仕様書の項目を編集します。",
+  "version": "0.1.0",
+  "publisher": "ramsesyok",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ramsesyok/vscode-screen-spec-annotator.git"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "screenSpecAnnotator.create",
+        "title": "画面注釈を作成",
+        "category": "Screen Spec Annotator"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "screenSpecAnnotator.create",
+          "when": "resourceScheme == file && resourceFilename =~ /\\.(png|jpe?g)$/i",
+          "group": "navigation"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "screenSpecAnnotator.annotations",
+        "displayName": "Screen Spec Annotator",
+        "selector": [{ "filenamePattern": "*.annotations.json" }],
+        "priority": "default"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --target=node20 --external:vscode --outfile=dist/extension.js && esbuild src/webview/editor.ts --bundle --platform=browser --target=chrome128 --outfile=dist/editor.js",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@types/vscode": "~1.95.0",
+    "esbuild": "^0.25.0",
+    "image-size": "^2.0.2",
+    "typescript": "^5.8.3"
+  }
+}
