@@ -7,7 +7,7 @@ body {
   font-family: var(--vscode-font-family, sans-serif);
 }
 [hidden] { display: none !important; }
-button, textarea { font: inherit; }
+button, textarea, input, select { font: inherit; }
 button {
   padding: 4px 9px;
   border: 1px solid var(--vscode-button-border, transparent);
@@ -50,13 +50,13 @@ button:disabled { opacity: .55; cursor: default; }
 #surface { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 #original { display: block; pointer-events: none; }
 #annotations { position: absolute; inset: 0; width: 100%; height: 100%; }
-.region, .marker, .handle { stroke: #113a60; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.region, .marker, .handle, .selection-outline { stroke-width: 2; vector-effect: non-scaling-stroke; }
 .region { fill: transparent; cursor: move; }
-.selected .region { stroke: #097ee3; }
+.selection-outline { fill: none; stroke: var(--vscode-focusBorder, #097ee3); stroke-width: 5; pointer-events: none; }
 .marker { fill: #fff; cursor: move; }
 .marker-text { fill: #0b253d; text-anchor: middle; dominant-baseline: central; font-weight: 700; pointer-events: none; }
 .handle { fill: #fff; stroke: #097ee3; cursor: crosshair; }
-.preview { stroke-dasharray: 4 3; pointer-events: none; }
+.region.preview { stroke-dasharray: 4 3; pointer-events: none; }
 .pan .region, .pan .marker { cursor: inherit; }
 
 #splitter {
@@ -66,9 +66,30 @@ button:disabled { opacity: .55; cursor: default; }
 }
 #splitter:hover, #splitter:focus-visible { background: var(--vscode-focusBorder); }
 #table-panel { min-height: 0; overflow: auto; padding: 8px 10px; }
+.properties {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 6px;
+  padding: 5px 9px;
+}
+fieldset.properties { min-inline-size: 0; border: 1px solid var(--vscode-panel-border, #777); }
+#image-style { margin-inline: 10px; }
+.properties label { display: inline-flex; align-items: center; gap: 5px; }
+.properties input[type="number"], .properties select {
+  box-sizing: border-box;
+  min-height: 28px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+}
+.properties input[type="number"] { width: 7.5ch; }
+.properties input[type="color"] { width: 2.8em; min-height: 28px; }
+#geometry-error { margin: 4px 9px; color: var(--vscode-errorForeground); }
 table { border-collapse: collapse; width: 100%; }
 th, td { border-bottom: 1px solid var(--vscode-panel-border); padding: 5px; text-align: left; }
-th:first-child { width: 5ch; }
+th:nth-child(-n+2) { width: 5ch; }
 tr.selected { background: var(--vscode-list-inactiveSelectionBackground); }
 textarea {
   display: block;

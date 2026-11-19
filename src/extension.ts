@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import * as vscode from "vscode";
@@ -159,7 +159,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
           if (state.version !== version) throw new Error("注釈が更新されました。最新の内容を確認してください。");
           if (!isEdit(edit)) throw new Error("編集操作の内容が無効です。");
 
-          const selectedId = applyAnnotationEdit(state.data, edit, randomUUID);
+          const selectedId = applyAnnotationEdit(state.data, edit, () => randomBytes(5).toString("base64url").slice(0, 6));
           const text = serialize(state.data);
           if (text !== document.getText()) {
             const transaction = new vscode.WorkspaceEdit();
@@ -209,7 +209,19 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
       <button id="fit" type="button">全体表示</button>
       <output id="zoom" aria-label="表示倍率"></output>
       <button id="remove" type="button">選択項目を削除</button>
+      <button id="image-style-toggle" type="button" aria-controls="image-style" aria-expanded="false">共通スタイル</button>
     </div>
+    <fieldset id="image-style" class="properties" hidden disabled>
+      <legend>画像全体の共通スタイル</legend>
+      <label>共通の色 <input id="image-color" type="color"></label>
+      <label>共通の線種
+        <select id="image-line" aria-label="共通の線種">
+          <option value="solid">実線</option>
+          <option value="dashed">破線</option>
+          <option value="dotted">点線</option>
+        </select>
+      </label>
+    </fieldset>
     <div id="notice" role="status" hidden></div>
     <div id="json-actions" hidden><button id="json" type="button">JSONエディターで開く</button></div>
     <div id="viewport" aria-label="原画像上の矩形と丸番号">
@@ -221,8 +233,47 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
   </section>
   <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="画像と表の高さを調整" aria-valuemin="20" aria-valuemax="80" aria-valuenow="65" tabindex="0"></div>
   <section id="table-panel" aria-label="対応表">
+    <div id="alignment" class="properties" role="group" aria-label="矩形の位置揃えと整列" hidden>
+      <span id="selection-count"></span>
+      <button type="button" data-align="left">左揃え</button>
+      <button type="button" data-align="center-x">左右中央</button>
+      <button type="button" data-align="right">右揃え</button>
+      <button type="button" data-align="top">上揃え</button>
+      <button type="button" data-align="center-y">上下中央</button>
+      <button type="button" data-align="bottom">下揃え</button>
+      <button type="button" data-distribute="horizontal" title="3つ以上の矩形の横方向の間隔を均等にする">左右に整列</button>
+      <button type="button" data-distribute="vertical" title="3つ以上の矩形の縦方向の間隔を均等にする">上下に整列</button>
+    </div>
+    <div id="item-properties" hidden>
+      <form id="geometry">
+        <fieldset id="geometry-fields" class="properties">
+          <legend id="geometry-title">位置とサイズ（px）</legend>
+          <label>矩形 X <input id="region-x" type="number" step="any" required></label>
+          <label>矩形 Y <input id="region-y" type="number" step="any" required></label>
+          <label>幅 <input id="region-width" type="number" step="any" required></label>
+          <label>高さ <input id="region-height" type="number" step="any" required></label>
+          <label>丸番号 X <input id="marker-x" type="number" step="any" required></label>
+          <label>丸番号 Y <input id="marker-y" type="number" step="any" required></label>
+          <button type="submit">座標を適用</button>
+        </fieldset>
+        <div id="geometry-error" role="status" hidden></div>
+      </form>
+      <fieldset class="properties">
+        <legend>項目のスタイル</legend>
+        <label><input id="override-color" type="checkbox"> 色を個別指定</label>
+        <label>項目の色 <input id="item-color" type="color"></label>
+        <label>項目の線種
+          <select id="item-line" aria-label="項目の線種">
+            <option value="">共通設定を使う</option>
+            <option value="solid">実線</option>
+            <option value="dashed">破線</option>
+            <option value="dotted">点線</option>
+          </select>
+        </label>
+      </fieldset>
+    </div>
     <table>
-      <thead><tr><th scope="col">番号</th><th scope="col">名称</th></tr></thead>
+      <thead><tr><th scope="col">選択</th><th scope="col">番号</th><th scope="col">名称</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <p id="empty">画像上をドラッグして矩形を追加できます。</p>

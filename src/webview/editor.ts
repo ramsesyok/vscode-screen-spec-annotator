@@ -1,5 +1,8 @@
-import { clamp, constrainMarker, markerRadius, regionBetween } from "../annotation";
-import type { AnnotationItem, Edit, Point, Region } from "../annotation";
+import {
+  clamp, constrainMarker, isAlignment, isDistributionDirection, isLineStyle, markerFits, markerRadius,
+  regionBetween, regionFits,
+} from "../annotation";
+import type { AnnotationItem, Edit, Point, Region, ShapeStyle } from "../annotation";
 import type { DocumentState, EditorMessage, HostMessage, OriginalImage } from "../protocol";
 
 declare function acquireVsCodeApi(): { postMessage(message: EditorMessage): void };
@@ -28,16 +31,38 @@ const removeButton = element<HTMLButtonElement>("remove");
 const zoomIn = element<HTMLButtonElement>("zoom-in");
 const zoomOut = element<HTMLButtonElement>("zoom-out");
 const fitButton = element<HTMLButtonElement>("fit");
+const imageStyle = element<HTMLFieldSetElement>("image-style");
+const imageStyleToggle = element<HTMLButtonElement>("image-style-toggle");
+const imageColor = element<HTMLInputElement>("image-color");
+const imageLine = element<HTMLSelectElement>("image-line");
+const alignmentTools = element<HTMLElement>("alignment");
+const selectionCount = element("selection-count");
+const itemProperties = element<HTMLElement>("item-properties");
+const geometryForm = element<HTMLFormElement>("geometry");
+const geometryFields = element<HTMLFieldSetElement>("geometry-fields");
+const geometryTitle = element("geometry-title");
+const geometryError = element<HTMLElement>("geometry-error");
+const regionX = element<HTMLInputElement>("region-x");
+const regionY = element<HTMLInputElement>("region-y");
+const regionWidth = element<HTMLInputElement>("region-width");
+const regionHeight = element<HTMLInputElement>("region-height");
+const markerX = element<HTMLInputElement>("marker-x");
+const markerY = element<HTMLInputElement>("marker-y");
+const overrideColor = element<HTMLInputElement>("override-color");
+const itemColor = element<HTMLInputElement>("item-color");
+const itemLine = element<HTMLSelectElement>("item-line");
 
 let state: DocumentState | undefined;
 let original: OriginalImage | undefined;
 let originalError: string | undefined;
 let editError: string | undefined;
 let imageRequest = 0;
-let selectedId: string | undefined;
+const selection = new Set<string>();
 let mode: "draw" | "pan" = "draw";
 let scale = 1;
 let offset: Point = { x: 0, y: 0 };
+let geometryItem: AnnotationItem | undefined;
+let geometryDirty = false;
 
 type Gesture =
   | { kind: "pan"; start: Point; offset: Point }
@@ -79,9 +104,8 @@ function sendNext(): void {
   }
 }
 
-function awaitingName(id: string): boolean {
-  return [current?.operation, ...pending].some(operation =>
-    operation?.kind === "edit" && operation.edit.kind === "name" && operation.edit.id === id);
+function queuedEdits(): Edit[] {
+  return [current?.operation, ...pending].flatMap(operation => operation?.kind === "edit" ? [operation.edit] : []);
 }
 
 function applyState(next: DocumentState): void {
@@ -93,7 +117,10 @@ function applyState(next: DocumentState): void {
     ++imageRequest;
   }
   state = next;
-  if (!state.data?.items.some(item => item.id === selectedId)) selectedId = undefined;
+  const ids = new Set(state.data?.items.map(item => item.id));
+  for (const id of selection) {
+    if (!ids.has(id)) selection.delete(id);
+  }
   render();
 }
 
@@ -118,7 +145,10 @@ window.addEventListener("message", event => {
           if (pending[i].kind === "save") pending.splice(i, 1);
         }
       }
-      if (message.selectedId) selectedId = message.selectedId;
+      if (message.selectedId) {
+        selection.clear();
+        selection.add(message.selectedId);
+      }
       applyState(message.state);
       sendNext();
       break;
@@ -186,7 +216,9 @@ function render(): void {
   renderNotice();
   renderAnnotations();
   renderRows();
-  removeButton.disabled = !selectedId;
+  renderImageStyle();
+  renderProperties();
+  removeButton.disabled = selection.size !== 1;
   zoomIn.disabled = zoomOut.disabled = fitButton.disabled = !original;
   drawButton.disabled = !hasEditableGeometry();
   panButton.disabled = !original;
@@ -194,14 +226,23 @@ function render(): void {
 
 interface RowControls {
   row: HTMLTableRowElement;
+  checkbox: HTMLInputElement;
   number: HTMLButtonElement;
   name: HTMLTextAreaElement;
   composing: boolean;
 }
 const rowElements = new Map<string, RowControls>();
 
+function renderRowSelection(id: string, controls: RowControls): void {
+  const selected = selection.has(id);
+  controls.row.classList.toggle("selected", selected);
+  controls.checkbox.checked = selected;
+  controls.number.setAttribute("aria-pressed", String(selected));
+}
+
 function renderRows(): void {
   const items = state?.data?.items ?? [];
+  const editingNames = new Set(queuedEdits().flatMap(edit => edit.kind === "name" ? [edit.id] : []));
   const visibleIds = new Set(items.map(item => item.id));
   for (const [id, controls] of rowElements) {
     if (!visibleIds.has(id)) {
@@ -213,16 +254,20 @@ function renderRows(): void {
     let controls = rowElements.get(item.id);
     if (!controls) {
       const row = rows.insertRow();
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.addEventListener("change", () => select(item.id, true));
+      row.insertCell().append(checkbox);
       const number = document.createElement("button");
       number.type = "button";
       number.className = "row-number";
-      number.addEventListener("click", () => select(item.id));
+      number.addEventListener("click", event => select(item.id, event.ctrlKey || event.metaKey || event.shiftKey));
       row.insertCell().append(number);
       const name = document.createElement("textarea");
       name.rows = 1;
       name.addEventListener("focus", () => select(item.id));
       const commit = () => enqueue({ kind: "edit", edit: { kind: "name", id: item.id, name: name.value } });
-      const entry = { row, number, name, composing: false };
+      const entry = { row, checkbox, number, name, composing: false };
       name.addEventListener("compositionstart", () => { entry.composing = true; });
       name.addEventListener("compositionend", () => {
         entry.composing = false;
@@ -236,26 +281,177 @@ function renderRows(): void {
       rowElements.set(item.id, controls);
     }
     if (rows.rows[index] !== controls.row) rows.insertBefore(controls.row, rows.rows[index] ?? null);
-    controls.row.classList.toggle("selected", item.id === selectedId);
+    renderRowSelection(item.id, controls);
+    controls.checkbox.setAttribute("aria-label", `${item.number}番を選択`);
     controls.number.textContent = String(item.number);
-    controls.number.setAttribute("aria-pressed", String(item.id === selectedId));
     controls.name.setAttribute("aria-label", `${item.number}番の名称`);
-    if (!awaitingName(item.id) && !controls.composing && controls.name.value !== item.name) {
+    if (!editingNames.has(item.id) && !controls.composing && controls.name.value !== item.name) {
       controls.name.value = item.name;
     }
   });
   empty.hidden = items.length > 0;
 }
 
-function select(id: string | undefined): void {
-  selectedId = id;
-  renderAnnotations();
-  for (const [rowId, controls] of rowElements) {
-    const selected = rowId === id;
-    controls.row.classList.toggle("selected", selected);
-    controls.number.setAttribute("aria-pressed", String(selected));
+function select(id: string | undefined, toggle = false): void {
+  if (!toggle) selection.clear();
+  if (id) {
+    if (toggle && selection.has(id)) selection.delete(id);
+    else selection.add(id);
   }
-  removeButton.disabled = !id;
+  renderAnnotations();
+  for (const [rowId, controls] of rowElements) renderRowSelection(rowId, controls);
+  renderProperties();
+  removeButton.disabled = selection.size !== 1;
+}
+
+function effectiveStyle(style: ShapeStyle, item: AnnotationItem): ShapeStyle {
+  return {
+    color: item.style?.color ?? style.color,
+    lineStyle: item.style?.lineStyle ?? style.lineStyle,
+  };
+}
+
+function renderProperties(): void {
+  const data = state?.data;
+  const canEditGeometry = hasEditableGeometry();
+  imageStyleToggle.disabled = !data;
+  imageStyle.disabled = !data;
+  alignmentTools.hidden = selection.size < 2;
+  selectionCount.textContent = `${selection.size}件の矩形`;
+  for (const button of alignmentTools.querySelectorAll("button")) {
+    const minimumSelection = button.dataset.distribute ? 3 : 2;
+    button.disabled = !canEditGeometry || selection.size < minimumSelection;
+  }
+
+  const item = selection.size === 1 ? data?.items.find(entry => selection.has(entry.id)) : undefined;
+  itemProperties.hidden = !item;
+  if (item?.id !== geometryItem?.id) geometryDirty = false;
+  geometryFields.disabled = !canEditGeometry;
+  if (!item || !data) {
+    geometryItem = undefined;
+    return;
+  }
+  geometryTitle.textContent = `${item.number}番の位置とサイズ（px）`;
+  const edits = queuedEdits();
+  const geometryPending = edits.some(edit => edit.kind === "geometry" && edit.id === item.id);
+  if (!geometryDirty && !geometryPending) {
+    const { region, marker } = item;
+    regionX.value = String(region.x);
+    regionY.value = String(region.y);
+    regionWidth.value = String(region.width);
+    regionHeight.value = String(region.height);
+    markerX.value = String(marker.x);
+    markerY.value = String(marker.y);
+    geometryItem = item;
+    geometryError.hidden = true;
+  }
+  const style = { ...data.style };
+  const overrides = { ...item.style };
+  for (const edit of edits) {
+    if (edit.kind !== "style") continue;
+    const target = edit.id === undefined ? style : edit.id === item.id ? overrides : undefined;
+    if (!target) continue;
+    if (edit.value === null) delete overrides[edit.property];
+    else if (edit.property === "color") target.color = edit.value;
+    else target.lineStyle = edit.value;
+  }
+  overrideColor.checked = overrides.color !== undefined;
+  itemColor.disabled = !overrideColor.checked;
+  itemColor.value = overrides.color ?? style.color;
+  itemLine.value = overrides.lineStyle ?? "";
+}
+
+function renderImageStyle(): void {
+  const style = state?.data?.style;
+  if (!style) return;
+  imageColor.value = style.color;
+  imageLine.value = style.lineStyle;
+  for (const edit of queuedEdits()) {
+    if (edit.kind !== "style" || edit.id !== undefined || edit.value === null) continue;
+    if (edit.property === "color") imageColor.value = edit.value;
+    else imageLine.value = edit.value;
+  }
+}
+
+function applyGeometry(): boolean {
+  const item = geometryItem;
+  const size = state?.data?.coordinateSize;
+  if (!item || !size || !hasEditableGeometry() || !geometryForm.reportValidity()) return false;
+  const region = {
+    x: regionX.valueAsNumber, y: regionY.valueAsNumber,
+    width: regionWidth.valueAsNumber, height: regionHeight.valueAsNumber,
+  };
+  const marker = { x: markerX.valueAsNumber, y: markerY.valueAsNumber };
+  const regionChanged = (Object.keys(region) as (keyof Region)[]).some(key => region[key] !== item.region[key]);
+  const markerChanged = marker.x !== item.marker.x || marker.y !== item.marker.y;
+  if (regionChanged && !regionFits(region, size)) {
+    geometryError.textContent = "幅と高さは正の値にし、矩形を画像の内側に収めてください。";
+  } else if (markerChanged && !markerFits(marker, item.number, size)) {
+    geometryError.textContent = "丸番号全体が画像の内側に収まる座標を指定してください。";
+  } else {
+    geometryDirty = false;
+    geometryError.hidden = true;
+    if (regionChanged || markerChanged) {
+      geometryItem = { ...item, region, marker };
+      enqueue({
+        kind: "edit",
+        edit: { kind: "geometry", id: item.id,
+          region: regionChanged ? region : undefined, marker: markerChanged ? marker : undefined },
+      });
+    }
+    return true;
+  }
+  geometryError.hidden = false;
+  return false;
+}
+
+geometryForm.addEventListener("input", () => { geometryDirty = true; });
+geometryForm.addEventListener("submit", event => {
+  event.preventDefault();
+  applyGeometry();
+});
+imageStyleToggle.addEventListener("click", () => {
+  imageStyle.hidden = !imageStyle.hidden;
+  imageStyleToggle.setAttribute("aria-expanded", String(!imageStyle.hidden));
+});
+imageColor.addEventListener("change", () => enqueue({
+  kind: "edit", edit: { kind: "style", property: "color", value: imageColor.value },
+}));
+imageLine.addEventListener("change", () => {
+  if (isLineStyle(imageLine.value)) enqueue({
+    kind: "edit", edit: { kind: "style", property: "lineStyle", value: imageLine.value },
+  });
+});
+overrideColor.addEventListener("change", () => {
+  if (!geometryItem) return;
+  itemColor.disabled = !overrideColor.checked;
+  enqueue({ kind: "edit", edit: { kind: "style", id: geometryItem.id, property: "color",
+    value: overrideColor.checked ? itemColor.value : null } });
+});
+itemColor.addEventListener("change", () => {
+  if (geometryItem && overrideColor.checked) enqueue({
+    kind: "edit", edit: { kind: "style", id: geometryItem.id, property: "color", value: itemColor.value },
+  });
+});
+itemLine.addEventListener("change", () => {
+  if (!geometryItem) return;
+  const value = itemLine.value;
+  if (value === "" || isLineStyle(value)) enqueue({
+    kind: "edit", edit: { kind: "style", id: geometryItem.id, property: "lineStyle", value: value || null },
+  });
+});
+for (const button of alignmentTools.querySelectorAll("button")) {
+  button.addEventListener("click", () => {
+    if (button.disabled) return;
+    const alignment = button.dataset.align;
+    const direction = button.dataset.distribute;
+    if (isAlignment(alignment)) enqueue({
+      kind: "edit", edit: { kind: "align", ids: [...selection], alignment },
+    });
+    if (isDistributionDirection(direction)) enqueue({
+      kind: "edit", edit: { kind: "distribute", ids: [...selection], direction },
+    });
+  });
 }
 
 function svg<K extends keyof SVGElementTagNameMap>(
@@ -271,24 +467,29 @@ function renderAnnotations(): void {
   annotations.replaceChildren();
   const data = state?.data;
   if (!data || !original) return;
-  const items = Array.from(data.items);
-  const selectedIndex = items.findIndex(item => item.id === selectedId);
-  if (selectedIndex >= 0) items.push(...items.splice(selectedIndex, 1));
+  const items = [...data.items];
+  items.sort((a, b) => Number(selection.has(a.id)) - Number(selection.has(b.id)));
   for (const item of items) {
-    const group = svg("g", { "data-id": item.id, class: item.id === selectedId ? "selected" : "" });
+    const selected = selection.has(item.id);
+    const group = svg("g", { "data-id": item.id, class: selected ? "selected" : "" });
     const active = gesture && "item" in gesture && gesture.item.id === item.id ? gesture : undefined;
     const rect = (active?.kind === "move" || active?.kind === "resize") ? active.preview ?? item.region : item.region;
     const marker = active?.kind === "marker" ? active.preview ?? item.marker : item.marker;
-    group.append(svg("rect", { ...rect, class: "region", "data-drag": "move" }));
+    const style = effectiveStyle(data.style, item);
+    const dashArray = { solid: "none", dashed: "7 4", dotted: "1 4" }[style.lineStyle];
+    const stroke = { stroke: style.color, "stroke-dasharray": dashArray };
+    if (selected) group.append(svg("rect", { ...rect, class: "selection-outline" }));
+    group.append(svg("rect", { ...rect, ...stroke, class: "region", "data-drag": "move" }));
     const radius = markerRadius(item.number, data.coordinateSize);
-    group.append(svg("circle", { cx: marker.x, cy: marker.y, r: radius, class: "marker", "data-drag": "marker" }));
+    if (selected) group.append(svg("circle", { cx: marker.x, cy: marker.y, r: radius, class: "selection-outline" }));
+    group.append(svg("circle", { cx: marker.x, cy: marker.y, r: radius, ...stroke, class: "marker", "data-drag": "marker" }));
     const label = svg("text", {
       x: marker.x, y: marker.y, class: "marker-text",
       "font-size": radius * Math.min(1.1, 2.5 / String(item.number).length),
     });
     label.textContent = String(item.number);
     group.append(label);
-    if (item.id === selectedId && mode === "draw" && hasEditableGeometry()) {
+    if (selected && selection.size === 1 && mode === "draw" && hasEditableGeometry()) {
       for (const x of [0, 1]) {
         for (const y of [0, 1]) {
           group.append(svg("circle", {
@@ -301,7 +502,7 @@ function renderAnnotations(): void {
     annotations.append(group);
   }
   if (gesture?.kind === "add" && gesture.preview) {
-    annotations.append(svg("rect", { ...gesture.preview, class: "region preview" }));
+    annotations.append(svg("rect", { ...gesture.preview, stroke: data.style.color, class: "region preview" }));
   }
 }
 
@@ -353,6 +554,11 @@ viewport.addEventListener("pointerdown", event => {
     const target = event.target as SVGElement;
     const id = target.closest<SVGGElement>("[data-id]")?.dataset.id;
     const item = state?.data?.items.find(entry => entry.id === id);
+    if (item && (event.ctrlKey || event.metaKey || event.shiftKey)) {
+      select(item.id, true);
+      event.preventDefault();
+      return;
+    }
     select(id);
     if (!hasEditableGeometry()) return;
     const start = imagePoint(point);
@@ -447,7 +653,8 @@ function setMode(next: typeof mode): void {
 drawButton.addEventListener("click", () => setMode("draw"));
 panButton.addEventListener("click", () => setMode("pan"));
 removeButton.addEventListener("click", () => {
-  if (selectedId) enqueue({ kind: "edit", edit: { kind: "remove", id: selectedId } });
+  const [id] = selection;
+  if (id && selection.size === 1) enqueue({ kind: "edit", edit: { kind: "remove", id } });
 });
 const center = () => ({ x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
 zoomIn.addEventListener("click", () => zoomBy(1.25, center()));
@@ -480,6 +687,7 @@ window.addEventListener("keydown", event => {
       event.key.toLowerCase() !== "s" || !state?.data) return;
   event.preventDefault();
   event.stopImmediatePropagation();
+  if (geometryDirty && !applyGeometry()) return;
   enqueue({ kind: "save" });
 }, true);
 
