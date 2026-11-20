@@ -233,32 +233,40 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
   </section>
   <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="画像と表の高さを調整" aria-valuemin="20" aria-valuemax="80" aria-valuenow="65" tabindex="0"></div>
   <section id="table-panel" aria-label="対応表">
-    <div id="alignment" class="properties" role="group" aria-label="矩形の位置揃えと整列" hidden>
+    <div id="alignment" class="properties" role="group" aria-label="位置揃えと整列" hidden>
       <span id="selection-count"></span>
+      <label>対象
+        <select id="placement-target" aria-label="配置の対象">
+          <option value="selected">選択した図形</option>
+          <option value="region">矩形のみ</option>
+          <option value="marker">丸番号のみ</option>
+          <option value="pair">矩形と丸番号の組</option>
+        </select>
+      </label>
       <button type="button" data-align="left">左揃え</button>
       <button type="button" data-align="center-x">左右中央</button>
       <button type="button" data-align="right">右揃え</button>
       <button type="button" data-align="top">上揃え</button>
       <button type="button" data-align="center-y">上下中央</button>
       <button type="button" data-align="bottom">下揃え</button>
-      <button type="button" data-distribute="horizontal" title="3つ以上の矩形の横方向の間隔を均等にする">左右に整列</button>
-      <button type="button" data-distribute="vertical" title="3つ以上の矩形の縦方向の間隔を均等にする">上下に整列</button>
+      <button type="button" data-distribute="horizontal" title="3つ以上の対象を横方向に等間隔で整列">左右に整列</button>
+      <button type="button" data-distribute="vertical" title="3つ以上の対象を縦方向に等間隔で整列">上下に整列</button>
     </div>
     <div id="item-properties" hidden>
       <form id="geometry">
         <fieldset id="geometry-fields" class="properties">
           <legend id="geometry-title">位置とサイズ（px）</legend>
-          <label>矩形 X <input id="region-x" type="number" step="any" required></label>
-          <label>矩形 Y <input id="region-y" type="number" step="any" required></label>
-          <label>幅 <input id="region-width" type="number" step="any" required></label>
-          <label>高さ <input id="region-height" type="number" step="any" required></label>
-          <label>丸番号 X <input id="marker-x" type="number" step="any" required></label>
-          <label>丸番号 Y <input id="marker-y" type="number" step="any" required></label>
+          <label>矩形 X <input id="region-x" type="number" step="any"></label>
+          <label>矩形 Y <input id="region-y" type="number" step="any"></label>
+          <label>幅 <input id="region-width" type="number" step="any"></label>
+          <label>高さ <input id="region-height" type="number" step="any"></label>
+          <label>丸番号 X <input id="marker-x" type="number" step="any"></label>
+          <label>丸番号 Y <input id="marker-y" type="number" step="any"></label>
           <button type="submit">座標を適用</button>
         </fieldset>
         <div id="geometry-error" role="status" hidden></div>
       </form>
-      <fieldset class="properties">
+      <fieldset id="item-style" class="properties">
         <legend>項目のスタイル</legend>
         <label><input id="override-color" type="checkbox"> 色を個別指定</label>
         <label>項目の色 <input id="item-color" type="color"></label>

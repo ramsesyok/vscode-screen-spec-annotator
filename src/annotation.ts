@@ -17,6 +17,10 @@ export interface ImageIdentity extends Size {
 export type LineStyle = "solid" | "dashed" | "dotted";
 export type Alignment = "left" | "center-x" | "right" | "top" | "center-y" | "bottom";
 export type DistributionDirection = "horizontal" | "vertical";
+export type ShapePart = "region" | "marker";
+export type PlacementTarget = ShapePart | "pair";
+export type PlacementSubject = { id: string; part: PlacementTarget };
+export type GeometryChange = { id: string; region?: Partial<Region>; marker?: Partial<Point> };
 
 export interface ShapeStyle {
   color: string;
@@ -46,13 +50,17 @@ export interface AnnotationDocument {
   items: AnnotationItem[];
 }
 
+type PlacementEdit = { subjects: PlacementSubject[] } & (
+  | { kind: "align"; alignment: Alignment }
+  | { kind: "distribute"; direction: DistributionDirection }
+);
+
 export type Edit =
   | { kind: "add"; region: Region }
   | { kind: "region"; id: string; region: Region }
   | { kind: "marker"; id: string; marker: Point }
-  | { kind: "geometry"; id: string; region?: Region; marker?: Point }
-  | { kind: "align"; ids: string[]; alignment: Alignment }
-  | { kind: "distribute"; ids: string[]; direction: DistributionDirection }
+  | { kind: "geometry"; changes: GeometryChange[] }
+  | PlacementEdit
   | { kind: "style"; id?: string; property: "color"; value: string | null }
   | { kind: "style"; id?: string; property: "lineStyle"; value: LineStyle | null }
   | { kind: "name"; id: string; name: string }
@@ -104,6 +112,26 @@ export function isAlignment(value: unknown): value is Alignment {
 
 export function isDistributionDirection(value: unknown): value is DistributionDirection {
   return value === "horizontal" || value === "vertical";
+}
+
+export function isPlacementTarget(value: unknown): value is PlacementTarget {
+  return value === "region" || value === "marker" || value === "pair";
+}
+
+function isPlacementSubject(value: unknown): value is PlacementSubject {
+  return isRecord(value) && isItemId(value.id) && isPlacementTarget(value.part);
+}
+
+function isCoordinatePatch(value: unknown, keys: readonly string[]): boolean {
+  return isRecord(value) && Object.keys(value).length > 0 &&
+    Object.entries(value).every(([key, coordinate]) => keys.includes(key) && isFiniteNumber(coordinate));
+}
+
+function isGeometryChange(value: unknown): value is GeometryChange {
+  return isRecord(value) && isItemId(value.id) &&
+    (value.region !== undefined || value.marker !== undefined) &&
+    (value.region === undefined || isCoordinatePatch(value.region, ["x", "y", "width", "height"])) &&
+    (value.marker === undefined || isCoordinatePatch(value.marker, ["x", "y"]));
 }
 
 function isItemId(value: unknown): value is string {
@@ -167,13 +195,20 @@ export function newAnnotation(imagePath: string, image: ImageIdentity): Annotati
 export function isEdit(value: unknown): value is Edit {
   if (!isRecord(value)) return false;
   if (value.kind === "add") return isRegion(value.region);
+  if (value.kind === "geometry") {
+    return Array.isArray(value.changes) && value.changes.length > 0 && value.changes.every(isGeometryChange) &&
+      new Set(value.changes.map(change => change.id)).size === value.changes.length;
+  }
   if (value.kind === "align" || value.kind === "distribute") {
-    if (!Array.isArray(value.ids) || !value.ids.every(isItemId) || new Set(value.ids).size !== value.ids.length) {
+    if (!Array.isArray(value.subjects) || !value.subjects.every(isPlacementSubject) ||
+        new Set(value.subjects.map(({ id, part }) => `${id}:${part}`)).size !== value.subjects.length) {
       return false;
     }
+    if (value.subjects.some(subject => subject.part === "pair") &&
+        !value.subjects.every(subject => subject.part === "pair")) return false;
     return value.kind === "align"
-      ? value.ids.length >= 2 && isAlignment(value.alignment)
-      : value.ids.length >= 3 && isDistributionDirection(value.direction);
+      ? value.subjects.length >= 2 && isAlignment(value.alignment)
+      : value.subjects.length >= 3 && isDistributionDirection(value.direction);
   }
   if (value.kind === "style") {
     if (value.id !== undefined && !isItemId(value.id)) return false;
@@ -186,10 +221,6 @@ export function isEdit(value: unknown): value is Edit {
   switch (value.kind) {
     case "region": return isRegion(value.region);
     case "marker": return isPoint(value.marker);
-    case "geometry":
-      return (value.region !== undefined || value.marker !== undefined) &&
-        (value.region === undefined || isRegion(value.region)) &&
-        (value.marker === undefined || isPoint(value.marker));
     case "name": return typeof value.name === "string";
     case "remove": return true;
     default: return false;
@@ -235,49 +266,100 @@ export function markerFits(point: Point, number: number, size: Size): boolean {
     Math.abs(constrained.x - point.x) < 1e-7 && Math.abs(constrained.y - point.y) < 1e-7;
 }
 
-function alignRegions(items: AnnotationItem[], alignment: Alignment, size: Size): void {
-  const horizontal = alignment === "left" || alignment === "center-x" || alignment === "right";
-  const axis = horizontal ? "x" : "y";
-  const length = horizontal ? "width" : "height";
+export function placementBounds(item: AnnotationItem, target: PlacementTarget, size: Size): Region {
+  if (target === "region") return item.region;
+  const radius = markerRadius(item.number, size);
+  const circle = {
+    x: item.marker.x - radius, y: item.marker.y - radius,
+    width: 2 * radius, height: 2 * radius,
+  };
+  if (target === "marker") return circle;
+  const { region } = item;
+  const x = Math.min(region.x, circle.x);
+  const y = Math.min(region.y, circle.y);
+  return {
+    x, y,
+    width: Math.max(region.x + region.width, circle.x + circle.width) - x,
+    height: Math.max(region.y + region.height, circle.y + circle.height) - y,
+  };
+}
+
+function alignedPositions(bounds: Region[], alignment: Alignment, axis: "x" | "y"): number[] {
+  const length = axis === "x" ? "width" : "height";
   const isStart = alignment === "left" || alignment === "top";
   const isEnd = alignment === "right" || alignment === "bottom";
-  const start = Math.min(...items.map(({ region }) => region[axis]));
-  const end = Math.max(...items.map(({ region }) => region[axis] + region[length]));
-  const regions = items.map(({ region }) => ({
-    ...region,
-    [axis]: isStart ? start : isEnd ? end - region[length] : start + (end - start - region[length]) / 2,
-  }));
-  applyRegions(items, regions, size);
+  const start = Math.min(...bounds.map(region => region[axis]));
+  const end = Math.max(...bounds.map(region => region[axis] + region[length]));
+  return bounds.map(region =>
+    isStart ? start : isEnd ? end - region[length] : start + (end - start - region[length]) / 2);
 }
 
-function distributeRegions(items: AnnotationItem[], direction: DistributionDirection, size: Size): void {
-  const axis = direction === "horizontal" ? "x" : "y";
-  const length = direction === "horizontal" ? "width" : "height";
-  // Only the filtered selection is sorted. Table order continues to follow data.items.
-  items.sort((a, b) => a.region[axis] - b.region[axis]);
-  const first = items[0].region;
-  const last = items[items.length - 1].region;
-  const totalLength = items.reduce((sum, { region }) => sum + region[length], 0);
+function distributedPositions(bounds: Region[], axis: "x" | "y"): number[] {
+  const length = axis === "x" ? "width" : "height";
+  const first = bounds[0];
+  const last = bounds[bounds.length - 1];
+  const totalLength = bounds.reduce((sum, region) => sum + region[length], 0);
   const freeSpace = last[axis] + last[length] - first[axis] - totalLength;
   if (freeSpace < -1e-7) {
-    throw new Error("両端の矩形の間に十分な空きがありません。間隔を広げてから整列してください。");
+    throw new Error("両端の間に十分な空きがありません。間隔を広げてから整列してください。");
   }
-  const gap = Math.max(0, freeSpace) / (items.length - 1);
+  const gap = Math.max(0, freeSpace) / (bounds.length - 1);
   let next = first[axis] + first[length] + gap;
-  const regions = items.map(({ region }, index) => {
-    if (index === 0 || index === items.length - 1) return region;
-    const moved = { ...region, [axis]: next };
+  return bounds.map((region, index) => {
+    if (index === 0 || index === bounds.length - 1) return region[axis];
+    const position = next;
     next += region[length] + gap;
-    return moved;
+    return position;
   });
-  applyRegions(items, regions, size);
 }
 
-function applyRegions(items: AnnotationItem[], regions: Region[], size: Size): void {
-  if (!regions.every(region => regionFits(region, size))) {
-    throw new Error("変更後の矩形が画像の内側に収まるように調整してください。");
+export function updatedGeometry(item: AnnotationItem, change: GeometryChange, size: Size): Partial<Pick<AnnotationItem, ShapePart>> {
+  const updated: Partial<Pick<AnnotationItem, ShapePart>> = {};
+  if (change.region) {
+    updated.region = { ...item.region, ...change.region };
+    if (!regionFits(updated.region, size)) throw new Error("幅と高さは正の値にし、矩形を画像の内側に収めてください。");
   }
-  items.forEach((item, index) => { item.region = regions[index]; });
+  if (change.marker) {
+    updated.marker = { ...item.marker, ...change.marker };
+    if (!markerFits(updated.marker, item.number, size)) throw new Error("丸番号全体が画像の内側に収まる座標を指定してください。");
+  }
+  return updated;
+}
+
+function applyGeometryChanges(items: Map<string, AnnotationItem>, changes: GeometryChange[], size: Size): void {
+  const updates = changes.map(change => {
+    const item = items.get(change.id);
+    if (!item) throw new Error("対象の項目が見つかりません。");
+    return { item, geometry: updatedGeometry(item, change, size) };
+  });
+  for (const { item, geometry } of updates) Object.assign(item, geometry);
+}
+
+function arrangeItems(items: Map<string, AnnotationItem>, edit: PlacementEdit, size: Size): void {
+  const horizontal = edit.kind === "distribute" ? edit.direction === "horizontal"
+    : edit.alignment === "left" || edit.alignment === "center-x" || edit.alignment === "right";
+  const axis = horizontal ? "x" : "y";
+  const targets = edit.subjects.map(({ id, part }) => {
+    const item = items.get(id);
+    if (!item) throw new Error("対象の項目が見つかりません。");
+    return { item, part, bounds: placementBounds(item, part, size) };
+  });
+  if (edit.kind === "distribute") targets.sort((a, b) => a.bounds[axis] - b.bounds[axis]);
+  const bounds = targets.map(entry => entry.bounds);
+  const positions = edit.kind === "align"
+    ? alignedPositions(bounds, edit.alignment, axis)
+    : distributedPositions(bounds, axis);
+
+  const changes = targets.map(({ item, part, bounds }, index): GeometryChange => {
+    const position = positions[index];
+    const offset = position - bounds[axis];
+    return {
+      id: item.id,
+      region: part === "marker" ? undefined : { [axis]: part === "region" ? position : item.region[axis] + offset },
+      marker: part === "region" ? undefined : { [axis]: item.marker[axis] + offset },
+    };
+  });
+  applyGeometryChanges(items, changes, size);
 }
 
 export function applyAnnotationEdit(
@@ -286,16 +368,13 @@ export function applyAnnotationEdit(
   generateId: () => string,
 ): string | undefined {
   const size = data.coordinateSize;
-  if ((edit.kind === "add" || edit.kind === "region" || edit.kind === "geometry") &&
-      edit.region && !regionFits(edit.region, size)) {
+  if ((edit.kind === "add" || edit.kind === "region") && !regionFits(edit.region, size)) {
     throw new Error("矩形を画像の内側に収めてください。");
   }
-  if (edit.kind === "align" || edit.kind === "distribute") {
-    const ids = new Set(edit.ids);
-    const items = data.items.filter(item => ids.has(item.id));
-    if (items.length !== edit.ids.length) throw new Error("対象の項目が見つかりません。");
-    if (edit.kind === "align") alignRegions(items, edit.alignment, size);
-    else distributeRegions(items, edit.direction, size);
+  if (edit.kind === "align" || edit.kind === "distribute" || edit.kind === "geometry") {
+    const items = new Map(data.items.map(item => [item.id, item]));
+    if (edit.kind === "geometry") applyGeometryChanges(items, edit.changes, size);
+    else arrangeItems(items, edit, size);
     return;
   }
   if (edit.kind === "style" && edit.id === undefined) {
@@ -328,13 +407,6 @@ export function applyAnnotationEdit(
       break;
     case "marker":
       item.marker = constrainMarker(edit.marker, item.number, size);
-      break;
-    case "geometry":
-      if (edit.marker && !markerFits(edit.marker, item.number, size)) {
-        throw new Error("丸番号が画像の内側に収まる座標を指定してください。");
-      }
-      if (edit.region) item.region = edit.region;
-      if (edit.marker) item.marker = edit.marker;
       break;
     case "style": {
       const style = { ...item.style };

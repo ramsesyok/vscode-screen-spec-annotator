@@ -57,6 +57,14 @@ button:disabled { opacity: .55; cursor: default; }
 .marker-text { fill: #0b253d; text-anchor: middle; dominant-baseline: central; font-weight: 700; pointer-events: none; }
 .handle { fill: #fff; stroke: #097ee3; cursor: crosshair; }
 .region.preview { stroke-dasharray: 4 3; pointer-events: none; }
+.selection-box {
+  fill: var(--vscode-focusBorder, #097ee3);
+  fill-opacity: .15;
+  stroke: var(--vscode-focusBorder, #097ee3);
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
 .pan .region, .pan .marker { cursor: inherit; }
 
 #splitter {
@@ -80,6 +88,7 @@ fieldset.properties { min-inline-size: 0; border: 1px solid var(--vscode-panel-b
 .properties input[type="number"], .properties select {
   box-sizing: border-box;
   min-height: 28px;
+  line-height: 1.4;
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
