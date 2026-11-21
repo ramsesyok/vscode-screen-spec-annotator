@@ -50,12 +50,12 @@ button:disabled { opacity: .55; cursor: default; }
 #surface { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 #original { display: block; pointer-events: none; }
 #annotations { position: absolute; inset: 0; width: 100%; height: 100%; }
-.region, .marker, .handle, .selection-outline { stroke-width: 2; vector-effect: non-scaling-stroke; }
+.region, .marker, .handle, .selection-outline { vector-effect: non-scaling-stroke; }
 .region { fill: transparent; cursor: move; }
-.selection-outline { fill: none; stroke: var(--vscode-focusBorder, #097ee3); stroke-width: 5; pointer-events: none; }
+.selection-outline { fill: none; stroke: var(--vscode-focusBorder, #097ee3); pointer-events: none; }
 .marker { fill: #fff; cursor: move; }
 .marker-text { fill: #0b253d; text-anchor: middle; dominant-baseline: central; font-weight: 700; pointer-events: none; }
-.handle { fill: #fff; stroke: #097ee3; cursor: crosshair; }
+.handle { fill: #fff; stroke: #097ee3; stroke-width: 2; cursor: crosshair; }
 .region.preview { stroke-dasharray: 4 3; pointer-events: none; }
 .selection-box {
   fill: var(--vscode-focusBorder, #097ee3);

@@ -221,6 +221,8 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
           <option value="dotted">点線</option>
         </select>
       </label>
+      <label>線の太さ（px） <input id="image-stroke-width" type="number" step="any" aria-label="共通の線の太さ"></label>
+      <label>丸番号の直径（px） <input id="image-marker-diameter" type="number" step="any" aria-label="共通の丸番号の直径" placeholder="自動"></label>
     </fieldset>
     <div id="notice" role="status" hidden></div>
     <div id="json-actions" hidden><button id="json" type="button">JSONエディターで開く</button></div>
@@ -278,6 +280,8 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
             <option value="dotted">点線</option>
           </select>
         </label>
+        <label>線の太さ（px） <input id="item-stroke-width" type="number" step="any" aria-label="項目の線の太さ" placeholder="共通"></label>
+        <label>丸番号の直径（px） <input id="item-marker-diameter" type="number" step="any" aria-label="項目の丸番号の直径" placeholder="共通"></label>
       </fieldset>
     </div>
     <table>

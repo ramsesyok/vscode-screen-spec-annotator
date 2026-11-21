@@ -1,8 +1,11 @@
 import {
-  clamp, constrainMarker, isAlignment, isDistributionDirection, isLineStyle, markerRadius,
-  placementBounds, regionBetween, updatedGeometry,
+  applyStyleValue, clamp, constrainMarker, defaultStrokeWidth, effectiveMarkerDiameter,
+  isAlignment, isDistributionDirection, isLineStyle, markerRadius, placementBounds, regionBetween, updatedGeometry,
 } from "../annotation";
-import type { AnnotationItem, Edit, GeometryChange, PlacementSubject, PlacementTarget, Point, Region, ShapePart, ShapeStyle } from "../annotation";
+import type {
+  AnnotationItem, Edit, GeometryChange, NumericStyleProperty, PlacementSubject,
+  PlacementTarget, Point, Region, ShapePart, ShapeStyle,
+} from "../annotation";
 import type { DocumentState, EditorMessage, HostMessage, OriginalImage } from "../protocol";
 
 declare function acquireVsCodeApi(): { postMessage(message: EditorMessage): void };
@@ -35,6 +38,8 @@ const imageStyle = element<HTMLFieldSetElement>("image-style");
 const imageStyleToggle = element<HTMLButtonElement>("image-style-toggle");
 const imageColor = element<HTMLInputElement>("image-color");
 const imageLine = element<HTMLSelectElement>("image-line");
+const imageStrokeWidth = element<HTMLInputElement>("image-stroke-width");
+const imageMarkerDiameter = element<HTMLInputElement>("image-marker-diameter");
 const alignmentTools = element<HTMLElement>("alignment");
 const selectionCount = element("selection-count");
 const placementTarget = element<HTMLSelectElement>("placement-target");
@@ -52,6 +57,16 @@ const markerFields = { x: element<HTMLInputElement>("marker-x"), y: element<HTML
 const overrideColor = element<HTMLInputElement>("override-color");
 const itemColor = element<HTMLInputElement>("item-color");
 const itemLine = element<HTMLSelectElement>("item-line");
+const itemStrokeWidth = element<HTMLInputElement>("item-stroke-width");
+const itemMarkerDiameter = element<HTMLInputElement>("item-marker-diameter");
+
+const numericStyleFields = [
+  { input: imageStrokeWidth, property: "strokeWidth", scope: "image" },
+  { input: imageMarkerDiameter, property: "markerDiameter", scope: "image" },
+  { input: itemStrokeWidth, property: "strokeWidth", scope: "item" },
+  { input: itemMarkerDiameter, property: "markerDiameter", scope: "item" },
+] as const;
+const styleDrafts = new Map<HTMLInputElement, string | undefined>();
 
 let state: DocumentState | undefined;
 let original: OriginalImage | undefined;
@@ -353,11 +368,18 @@ function pendingGeometry(items: AnnotationItem[], edits: Edit[]): AnnotationItem
   return [...draft.values()];
 }
 
-function effectiveStyle(style: ShapeStyle, item: AnnotationItem): ShapeStyle {
-  return {
-    color: item.style?.color ?? style.color,
-    lineStyle: item.style?.lineStyle ?? style.lineStyle,
-  };
+function pendingStyle<T extends Partial<ShapeStyle>>(saved: T, id?: string, edits = queuedEdits()): T {
+  const style = { ...saved };
+  for (const edit of edits) {
+    if (edit.kind === "style" && edit.id === id) applyStyleValue(style, edit);
+  }
+  return style;
+}
+
+function renderStyleNumber(input: HTMLInputElement, value: number | undefined): void {
+  if (styleDrafts.has(input)) return;
+  const current = value === undefined ? "" : String(value);
+  if (input.value !== current) input.value = current;
 }
 
 function renderProperties(): void {
@@ -378,6 +400,9 @@ function renderProperties(): void {
   const item = items.length === 1 ? items[0] : undefined;
   itemProperties.hidden = !shapeCount;
   itemStyle.hidden = !item;
+  for (const input of [itemStrokeWidth, itemMarkerDiameter]) {
+    if (styleDrafts.get(input) !== item?.id) styleDrafts.delete(input);
+  }
   removeButton.disabled = !item;
   geometryFields.disabled = !canEditGeometry;
   const key = items.map(({ id }) =>
@@ -393,20 +418,14 @@ function renderProperties(): void {
   renderCoordinates(regionFields, draft.filter(entry => selection.region.has(entry.id)).map(entry => entry.region));
   renderCoordinates(markerFields, draft.filter(entry => selection.marker.has(entry.id)).map(entry => entry.marker));
   if (!item || !data) return;
-  const style = { ...data.style };
-  const overrides = { ...item.style };
-  for (const edit of edits) {
-    if (edit.kind !== "style") continue;
-    const target = edit.id === undefined ? style : edit.id === item.id ? overrides : undefined;
-    if (!target) continue;
-    if (edit.value === null) delete overrides[edit.property];
-    else if (edit.property === "color") target.color = edit.value;
-    else target.lineStyle = edit.value;
-  }
+  const style = pendingStyle(data.style, undefined, edits);
+  const overrides = pendingStyle(item.style ?? {}, item.id, edits);
   overrideColor.checked = overrides.color !== undefined;
   itemColor.disabled = !overrideColor.checked;
   itemColor.value = overrides.color ?? style.color;
   itemLine.value = overrides.lineStyle ?? "";
+  renderStyleNumber(itemStrokeWidth, overrides.strokeWidth);
+  renderStyleNumber(itemMarkerDiameter, overrides.markerDiameter);
 }
 
 function renderCoordinates<Key extends string>(fields: Record<Key, HTMLInputElement>, values: Record<Key, number>[]): void {
@@ -425,13 +444,11 @@ function renderCoordinates<Key extends string>(fields: Record<Key, HTMLInputElem
 function renderImageStyle(): void {
   const style = state?.data?.style;
   if (!style) return;
-  imageColor.value = style.color;
-  imageLine.value = style.lineStyle;
-  for (const edit of queuedEdits()) {
-    if (edit.kind !== "style" || edit.id !== undefined || edit.value === null) continue;
-    if (edit.property === "color") imageColor.value = edit.value;
-    else imageLine.value = edit.value;
-  }
+  const draft = pendingStyle(style);
+  imageColor.value = draft.color;
+  imageLine.value = draft.lineStyle;
+  renderStyleNumber(imageStrokeWidth, draft.strokeWidth ?? defaultStrokeWidth);
+  renderStyleNumber(imageMarkerDiameter, draft.markerDiameter);
 }
 
 function changedCoordinates<Key extends string>(fields: Record<Key, HTMLInputElement>): Partial<Record<Key, number>> | undefined {
@@ -445,17 +462,25 @@ function changedCoordinates<Key extends string>(fields: Record<Key, HTMLInputEle
 
 function applyGeometry(): boolean {
   if (!changedInputs.size) return true;
-  const size = state?.data?.coordinateSize;
-  if (!size || !hasEditableGeometry() || !geometryForm.reportValidity()) return false;
+  const data = state?.data;
+  if (!data || !hasEditableGeometry() || !geometryForm.reportValidity()) return false;
+  const size = data.coordinateSize;
+  const edits = queuedEdits();
+  const common = pendingStyle(data.style, undefined, edits);
   const region = changedCoordinates(regionFields);
   const marker = changedCoordinates(markerFields);
   const changes: GeometryChange[] = [];
   try {
-    for (const item of pendingGeometry(selectedItems(), queuedEdits())) {
+    for (const item of pendingGeometry(selectedItems(), edits)) {
       const change = { id: item.id, region: selection.region.has(item.id) ? region : undefined,
         marker: selection.marker.has(item.id) ? marker : undefined };
       if (!change.region && !change.marker) continue;
-      updatedGeometry(item, change, size);
+      const draft = { ...item, style: pendingStyle(item.style ?? {}, item.id, edits) };
+      const diameter = effectiveMarkerDiameter(common, draft);
+      if (diameter !== effectiveMarkerDiameter(data.style, item)) {
+        draft.marker = constrainMarker(draft.marker, draft.number, size, diameter);
+      }
+      updatedGeometry(draft, change, size, common);
       changes.push(change);
     }
   } catch (error) {
@@ -477,6 +502,42 @@ geometryForm.addEventListener("submit", event => {
   event.preventDefault();
   applyGeometry();
 });
+
+function commitStyleNumber(input: HTMLInputElement, property: NumericStyleProperty): boolean {
+  if (!styleDrafts.has(input)) return true;
+  const data = state?.data;
+  if (!data) return false;
+  const id = styleDrafts.get(input);
+  const value = input.value === "" ? null : input.valueAsNumber;
+  const label = property === "strokeWidth" ? "線の太さ" : "丸番号の直径";
+  if (input.validity.badInput || (value !== null && (!Number.isFinite(value) || value <= 0))) {
+    editError = `${label}には0より大きい値を入力してください。`;
+  } else if (property === "markerDiameter" && value !== null &&
+      value > Math.min(data.coordinateSize.width, data.coordinateSize.height)) {
+    editError = "丸番号の直径は画像の短辺以下にしてください。";
+  } else {
+    styleDrafts.delete(input);
+    enqueue({ kind: "edit", edit: { kind: "style", id, property, value } });
+    return true;
+  }
+  renderNotice();
+  return false;
+}
+
+for (const { input, property, scope } of numericStyleFields) {
+  input.addEventListener("input", () => {
+    const [item] = selectedItems();
+    if (scope === "item" && !item) return;
+    styleDrafts.set(input, scope === "item" ? item.id : undefined);
+  });
+  input.addEventListener("change", () => { commitStyleNumber(input, property); });
+  input.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    commitStyleNumber(input, property);
+  });
+}
+
 imageStyleToggle.addEventListener("click", () => {
   imageStyle.hidden = !imageStyle.hidden;
   imageStyleToggle.setAttribute("aria-expanded", String(!imageStyle.hidden));
@@ -552,14 +613,16 @@ function renderAnnotations(): void {
     const active = gesture && "item" in gesture && gesture.item.id === item.id ? gesture : undefined;
     const rect = (active?.kind === "move" || active?.kind === "resize") ? active.preview ?? item.region : item.region;
     const marker = active?.kind === "marker" ? active.preview ?? item.marker : item.marker;
-    const style = effectiveStyle(data.style, item);
+    const style = { ...data.style, ...item.style };
+    const strokeWidth = style.strokeWidth ?? defaultStrokeWidth;
     const dashArray = { solid: "none", dashed: "7 4", dotted: "1 4" }[style.lineStyle];
-    const stroke = { stroke: style.color, "stroke-dasharray": dashArray };
-    if (regionSelected) group.append(svg("rect", { ...rect, class: "selection-outline" }));
+    const stroke = { stroke: style.color, "stroke-dasharray": dashArray, "stroke-width": strokeWidth };
+    const outline = { class: "selection-outline", "stroke-width": strokeWidth + 3 };
+    if (regionSelected) group.append(svg("rect", { ...rect, ...outline }));
     group.append(svg("rect", { ...rect, ...stroke, class: "region", "data-drag": "move" }));
-    const radius = markerRadius(item.number, data.coordinateSize);
+    const radius = markerRadius(item.number, data.coordinateSize, style.markerDiameter);
     if (markerSelected) {
-      markerGroup.append(svg("circle", { cx: marker.x, cy: marker.y, r: radius, class: "selection-outline" }));
+      markerGroup.append(svg("circle", { cx: marker.x, cy: marker.y, r: radius, ...outline }));
     }
     markerGroup.append(svg("circle", { cx: marker.x, cy: marker.y, r: radius, ...stroke, class: "marker", "data-drag": "marker" }));
     const label = svg("text", {
@@ -583,7 +646,8 @@ function renderAnnotations(): void {
   }
   annotations.append(markers);
   if (gesture?.kind === "add" && gesture.preview) {
-    annotations.append(svg("rect", { ...gesture.preview, stroke: data.style.color, class: "region preview" }));
+    annotations.append(svg("rect", { ...gesture.preview, stroke: data.style.color,
+      "stroke-width": data.style.strokeWidth ?? defaultStrokeWidth, class: "region preview" }));
   }
   if (gesture?.kind === "select-box" && gesture.preview) {
     annotations.append(svg("rect", { ...gesture.preview, class: "selection-box" }));
@@ -685,9 +749,10 @@ function preview(event: PointerEvent): void {
     case "resize": gesture.preview = regionBetween(gesture.anchor, boundPoint(position)); break;
     case "marker": {
       const { item, start } = gesture;
+      const style = state?.data?.style;
       gesture.preview = constrainMarker({
         x: item.marker.x + position.x - start.x, y: item.marker.y + position.y - start.y,
-      }, item.number, original.identity);
+      }, item.number, original.identity, style && effectiveMarkerDiameter(style, item));
       break;
     }
     case "move": {
@@ -708,7 +773,7 @@ function selectInBox(box: Region): void {
   if (!data) return;
   for (const item of data.items) {
     for (const part of shapeParts) {
-      const bounds = placementBounds(item, part, data.coordinateSize);
+      const bounds = placementBounds(item, part, data.coordinateSize, data.style);
       if (bounds.x >= box.x && bounds.y >= box.y &&
           bounds.x + bounds.width <= box.x + box.width &&
           bounds.y + bounds.height <= box.y + box.height) {
@@ -806,6 +871,7 @@ window.addEventListener("keydown", event => {
       event.key.toLowerCase() !== "s" || !state?.data) return;
   event.preventDefault();
   event.stopImmediatePropagation();
+  if (!numericStyleFields.every(({ input, property }) => commitStyleNumber(input, property))) return;
   if (!applyGeometry()) return;
   enqueue({ kind: "save" });
 }, true);
