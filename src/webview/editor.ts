@@ -596,16 +596,23 @@ function svg<K extends keyof SVGElementTagNameMap>(
   return node;
 }
 
+function appendSelectionHighlight(group: SVGGElement, tag: "rect" | "circle", geometry: Record<string, number>): void {
+  group.append(
+    svg(tag, { ...geometry, class: "selection-halo", "aria-hidden": "true" }),
+    svg(tag, { ...geometry, class: "selection-outline", "aria-hidden": "true" }),
+  );
+}
+
 function renderAnnotations(): void {
   annotations.replaceChildren();
   const data = state?.data;
   if (!data || !original) return;
-  const items = [...data.items];
-  items.sort((a, b) => Number(hasSelectedShape(a.id)) - Number(hasSelectedShape(b.id)));
   const resizeEnabled = selection.region.size === 1 && selectedItems().length === 1 &&
     mode === "draw" && hasEditableGeometry();
   const markers = svg("g", {});
-  for (const item of items) {
+  const selectedRegions: SVGGElement[] = [];
+  const selectedMarkers: SVGGElement[] = [];
+  for (const item of data.items) {
     const regionSelected = selection.region.has(item.id);
     const markerSelected = selection.marker.has(item.id);
     const group = svg("g", { "data-id": item.id });
@@ -617,21 +624,20 @@ function renderAnnotations(): void {
     const strokeWidth = style.strokeWidth ?? defaultStrokeWidth;
     const dashArray = { solid: "none", dashed: "7 4", dotted: "1 4" }[style.lineStyle];
     const stroke = { stroke: style.color, "stroke-dasharray": dashArray, "stroke-width": strokeWidth };
-    const outline = { class: "selection-outline", "stroke-width": strokeWidth + 3 };
-    if (regionSelected) group.append(svg("rect", { ...rect, ...outline }));
     group.append(svg("rect", { ...rect, ...stroke, class: "region", "data-drag": "move" }));
+    if (regionSelected) appendSelectionHighlight(group, "rect", { ...rect });
     const radius = markerRadius(item.number, data.coordinateSize, style.markerDiameter);
-    if (markerSelected) {
-      markerGroup.append(svg("circle", { cx: marker.x, cy: marker.y, r: radius, ...outline }));
-    }
-    markerGroup.append(svg("circle", { cx: marker.x, cy: marker.y, r: radius, ...stroke, class: "marker", "data-drag": "marker" }));
+    const circle = { cx: marker.x, cy: marker.y, r: radius };
+    markerGroup.append(svg("circle", { ...circle, ...stroke, class: "marker", "data-drag": "marker" }));
+    if (markerSelected) appendSelectionHighlight(markerGroup, "circle", circle);
     const label = svg("text", {
       x: marker.x, y: marker.y, class: "marker-text",
       "font-size": radius * Math.min(1.1, 2.5 / String(item.number).length),
     });
     label.textContent = String(item.number);
     markerGroup.append(label);
-    markers.append(markerGroup);
+    if (markerSelected) selectedMarkers.push(markerGroup);
+    else markers.append(markerGroup);
     if (regionSelected && resizeEnabled) {
       for (const x of [0, 1]) {
         for (const y of [0, 1]) {
@@ -642,9 +648,11 @@ function renderAnnotations(): void {
         }
       }
     }
-    annotations.append(group);
+    if (regionSelected) selectedRegions.push(group);
+    else annotations.append(group);
   }
-  annotations.append(markers);
+  markers.append(...selectedMarkers);
+  annotations.append(...selectedRegions, markers);
   if (gesture?.kind === "add" && gesture.preview) {
     annotations.append(svg("rect", { ...gesture.preview, stroke: data.style.color,
       "stroke-width": data.style.strokeWidth ?? defaultStrokeWidth, class: "region preview" }));
