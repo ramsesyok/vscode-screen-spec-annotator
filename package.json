@@ -150,6 +150,9 @@
     ]
   },
   "scripts": {
+    "test": "node --test",
+    "test:webview": "npm run build && python integration/webview.py",
+    "build:host-test": "esbuild integration/document-operations.ts --bundle --platform=node --target=node20 --external:vscode --outfile=node_modules/.cache/screen-spec-host-test.cjs",
     "build": "esbuild src/extension.ts --bundle --platform=node --target=node20 --external:vscode --outfile=dist/extension.js && esbuild src/webview/editor.ts --bundle --platform=browser --target=chrome128 --outfile=dist/editor.js",
     "check": "tsc --noEmit",
     "vscode:prepublish": "npm run build",

@@ -1,5 +1,6 @@
+import { OperationQueue, type QueuedOperation } from "./operation-queue";
 import {
-  applyStyleValue, clamp, constrainMarker, constrainRegionPosition, defaultMarkerColors, defaultStrokeWidth, effectiveMarkerDiameter,
+  applyStyleValue, clamp, constrainMarker, constrainRegionPosition, defaultMarkerColors, defaultStrokeWidth, geometryBasis, effectiveMarkerDiameter,
   isAlignment, isDistributionDirection, isLineStyle, isMarkerAnchor, markerAfterRegionMove, markerRadius, placementBounds, regionBetween, updatedGeometry,
 } from "../annotation";
 import type {
@@ -92,55 +93,35 @@ const changedInputs = new Set<HTMLInputElement>();
 
 type Gesture =
   | { kind: "pan"; start: Point; offset: Point }
-  | { kind: "add"; start: Point; preview?: Region }
+  | { kind: "add"; start: Point; origin: string; preview?: Region }
   | { kind: "select-box"; start: Point; additive: boolean; subject?: { id: string; part: ShapePart }; preview?: Region }
-  | { kind: "move"; start: Point; item: AnnotationItem; preview?: Region }
-  | { kind: "resize"; anchor: Point; item: AnnotationItem; preview?: Region }
-  | { kind: "marker"; start: Point; item: AnnotationItem; preview?: Point };
+  | { kind: "move"; start: Point; item: AnnotationItem; origin: string; preview?: Region }
+  | { kind: "resize"; anchor: Point; item: AnnotationItem; origin: string; preview?: Region }
+  | { kind: "marker"; start: Point; item: AnnotationItem; origin: string; preview?: Point };
 let gesture: (Gesture & { pointer: number; pointerStart: Point }) | undefined;
 
-type QueuedOperation = { kind: "save" | "saveDefaultStyle" | "pasteRects" } |
-  { kind: "copyRects"; ids: string[] } | { kind: "edit"; edit: Edit };
-const pending: QueuedOperation[] = [];
-let current: { operation: QueuedOperation; request: number } | undefined;
-let nextRequest = 0;
+const queue = new OperationQueue(message => vscode.postMessage(message));
 
 function enqueue(operation: QueuedOperation): void {
-  const previous = pending.at(-1);
-  if (operation.kind === "edit" && operation.edit.kind === "name" &&
-      previous?.kind === "edit" && previous.edit.kind === "name" && previous.edit.id === operation.edit.id) {
-    pending[pending.length - 1] = operation;
-  } else {
-    pending.push(operation);
-  }
+  queue.enqueue(operation);
   editError = undefined;
   editStatus = undefined;
-  sendNext();
+  queue.sendNext(state?.version);
   renderNotice();
-}
-
-function sendNext(): void {
-  if (current || !state) return;
-  const operation = pending.shift();
-  if (!operation) return;
-  const request = ++nextRequest;
-  current = { operation, request };
-  const version = state.version;
-  if (operation.kind === "edit") {
-    vscode.postMessage({ type: "edit", request, version, edit: operation.edit });
-  } else if (operation.kind === "copyRects") {
-    vscode.postMessage({ type: operation.kind, request, version, ids: operation.ids });
-  } else {
-    vscode.postMessage({ type: operation.kind, request, version });
-  }
-}
-
-function queuedEdits(): Edit[] {
-  return [current?.operation, ...pending].flatMap(operation => operation?.kind === "edit" ? [operation.edit] : []);
 }
 
 function applyState(next: DocumentState): void {
   if (state && next.version < state.version) return;
+  if (gesture && "origin" in gesture) {
+    const id = "item" in gesture ? gesture.item.id : undefined;
+    const target = id ? next.data?.items.find(item => item.id === id) : undefined;
+    if (!next.data || gesture.origin !== geometryBasis(next.data, target)) {
+      const { pointer } = gesture;
+      gesture = undefined;
+      if (viewport.hasPointerCapture(pointer)) viewport.releasePointerCapture(pointer);
+      editError = "ドラッグ中に対象が更新されました。最新の位置から操作し直してください。";
+    }
+  }
   if (next.data?.imagePath !== state?.data?.imagePath) {
     original = undefined;
     originalError = undefined;
@@ -148,6 +129,11 @@ function applyState(next: DocumentState): void {
     ++imageRequest;
   }
   state = next;
+  if (!hasEditableGeometry() && changedInputs.size) {
+    changedInputs.clear();
+    geometryError.hidden = true;
+    editError = "画像の基準が変わったため、未適用の座標入力を取り消しました。";
+  }
   const ids = new Set(state.data?.items.map(item => item.id));
   for (const part of shapeParts) {
     for (const id of selection[part]) {
@@ -163,7 +149,7 @@ window.addEventListener("message", event => {
   switch (message.type) {
     case "state":
       applyState(message.state);
-      sendNext();
+      queue.sendNext(state?.version);
       break;
     case "image":
       if (message.imagePath === state?.data?.imagePath) void displayImage(message.image, message.error);
@@ -181,14 +167,13 @@ window.addEventListener("message", event => {
       pasteRectangles();
       break;
     case "result":
-      if (current?.request !== message.request) return;
-      const { operation } = current;
-      current = undefined;
+      const operation = queue.complete(message.request, !!message.error);
+      if (!operation) return;
       if (message.error) {
         editError = message.error;
-        // Skip pending saves when an earlier edit in the queue fails.
-        for (let i = pending.length - 1; i >= 0; i--) {
-          if (pending[i].kind === "save" || pending[i].kind === "saveDefaultStyle") pending.splice(i, 1);
+        if (operation.kind === "edit" && operation.edit.kind === "name") {
+          const controls = rowElements.get(operation.edit.id);
+          if (controls) controls.conflict.hidden = false;
         }
       } else if (operation.kind === "saveDefaultStyle") {
         editStatus = "新規画像の既定スタイルを VS Code の設定に保存しました。";
@@ -199,8 +184,9 @@ window.addEventListener("message", event => {
         setSelection(undefined, "pair", false);
         for (const id of message.selectedIds) setSelection(id, "pair", true);
       }
-      applyState(message.state);
-      sendNext();
+      if (state && message.state.version < state.version) render();
+      else applyState(message.state);
+      queue.sendNext(state?.version);
       break;
   }
 });
@@ -252,11 +238,12 @@ function renderNotice(): void {
   const changed = original && data && original.identity.sha256 !== data.confirmedImage.sha256;
   let imageStatus: string | undefined;
   if (original && data && !hasEditableGeometry()) {
-    imageStatus = "原画像と注釈の基準寸法が異なります。矩形と丸番号の編集を一時停止しています。";
+    imageStatus = "原画像と注釈の基準寸法が異なります。図形の追加・位置・サイズ・丸番号の直径・削除は一時停止中です。";
   } else if (changed) {
     imageStatus = "原画像が更新されています。保存済みの注釈位置を確認してください。";
   }
-  notice.textContent = state?.error ?? originalError ?? editError ?? imageStatus ?? editStatus ??
+  const warning = [editError, imageStatus].filter(Boolean).join(" ");
+  notice.textContent = state?.error ?? originalError ?? (warning || editStatus) ??
     (original ? "" : "原画像を読み込んでいます…");
   notice.hidden = !notice.textContent;
   jsonActions.hidden = !state?.error;
@@ -285,6 +272,9 @@ interface RowControls {
   number: HTMLButtonElement;
   numberLabel: HTMLSpanElement;
   name: HTMLTextAreaElement;
+  previousName: string;
+  conflict: HTMLElement;
+  latest: HTMLElement;
   composing: boolean;
 }
 const rowElements = new Map<string, RowControls>();
@@ -300,7 +290,7 @@ function renderRowSelection(id: string, controls: RowControls): void {
 
 function renderRows(): void {
   const items = state?.data?.items ?? [];
-  const editingNames = new Set(queuedEdits().flatMap(edit => edit.kind === "name" ? [edit.id] : []));
+  const editingNames = new Set(queue.queuedEdits().flatMap(edit => edit.kind === "name" ? [edit.id] : []));
   const visibleIds = new Set(items.map(item => item.id));
   for (const [id, controls] of rowElements) {
     if (!visibleIds.has(id)) {
@@ -327,8 +317,29 @@ function renderRows(): void {
       const name = document.createElement("textarea");
       name.rows = 1;
       name.addEventListener("focus", () => select(item.id));
-      const commit = () => enqueue({ kind: "edit", edit: { kind: "name", id: item.id, name: name.value } });
-      const entry = { row, checkbox, number, numberLabel, name, composing: false };
+      const conflict = document.createElement("div");
+      conflict.hidden = true;
+      const latest = document.createElement("div");
+      const retry = document.createElement("button");
+      retry.textContent = "入力した名称を再適用";
+      const discard = document.createElement("button");
+      discard.textContent = "最新の名称を使う";
+      conflict.append(latest, retry, discard);
+      const entry = { row, checkbox, number, numberLabel, name, composing: false, previousName: item.name, conflict, latest };
+      const commit = () => {
+        if (!conflict.hidden) return;
+        enqueue({ kind: "edit", edit: { kind: "name", id: item.id, name: name.value, previousName: entry.previousName } });
+        entry.previousName = name.value;
+      };
+      retry.addEventListener("click", () => {
+        conflict.hidden = true;
+        commit();
+      });
+      discard.addEventListener("click", () => {
+        conflict.hidden = true;
+        editError = undefined;
+        render();
+      });
       name.addEventListener("compositionstart", () => { entry.composing = true; });
       name.addEventListener("compositionend", () => {
         entry.composing = false;
@@ -337,7 +348,7 @@ function renderRows(): void {
       name.addEventListener("input", event => {
         if (!entry.composing && !(event as InputEvent).isComposing) commit();
       });
-      row.insertCell().append(name);
+      row.insertCell().append(name, conflict);
       controls = entry;
       rowElements.set(item.id, controls);
     }
@@ -348,8 +359,12 @@ function renderRows(): void {
     controls.number.title = `${item.number}番の図形を選択`;
     controls.number.setAttribute("aria-label", controls.number.title);
     controls.name.setAttribute("aria-label", `${item.number}番の名称`);
-    if (!editingNames.has(item.id) && !controls.composing && controls.name.value !== item.name) {
-      controls.name.value = item.name;
+    if (!controls.conflict.hidden) {
+      controls.latest.textContent = "未反映の入力があります。最新の名称：" + item.name;
+      controls.previousName = item.name;
+    } else if (!editingNames.has(item.id) && !controls.composing) {
+      controls.previousName = item.name;
+      if (controls.name.value !== item.name) controls.name.value = item.name;
     }
   });
   empty.hidden = items.length > 0;
@@ -410,7 +425,7 @@ function pendingGeometry(items: AnnotationItem[], edits: Edit[]): AnnotationItem
   return [...draft.values()];
 }
 
-function pendingStyle<T extends Partial<ShapeStyle>>(saved: T, id?: string, edits = queuedEdits()): T {
+function pendingStyle<T extends Partial<ShapeStyle>>(saved: T, id?: string, edits = queue.queuedEdits()): T {
   const style = { ...saved };
   for (const edit of edits) {
     if (edit.kind === "style" && edit.id === id) applyStyleValue(style, edit);
@@ -444,7 +459,12 @@ function renderProperties(): void {
   for (const input of [itemStrokeWidth, itemMarkerDiameter]) {
     if (styleDrafts.get(input) !== item?.id) styleDrafts.delete(input);
   }
-  removeButton.disabled = !items.length;
+  removeButton.disabled = !canEditGeometry || !items.length;
+  imageMarkerDiameter.disabled = itemMarkerDiameter.disabled = !canEditGeometry;
+  if (!canEditGeometry) {
+    styleDrafts.delete(imageMarkerDiameter);
+    styleDrafts.delete(itemMarkerDiameter);
+  }
   geometryFields.disabled = !canEditGeometry;
   const key = items.map(({ id }) => id).join(",");
   if (key !== geometrySelection) {
@@ -453,7 +473,7 @@ function renderProperties(): void {
     geometryError.hidden = true;
   }
   geometryTitle.textContent = item ? `${item.number}番の位置とサイズ（px）` : "選択した項目の位置とサイズ（px）";
-  const edits = queuedEdits();
+  const edits = queue.queuedEdits();
   const draft = pendingGeometry(items, edits);
   renderCoordinates(regionFields, draft.map(entry => entry.region));
   renderCoordinates(markerFields, draft.map(entry => entry.marker));
@@ -510,7 +530,7 @@ function applyGeometry(): boolean {
   const data = state?.data;
   if (!data || !hasEditableGeometry() || !geometryForm.reportValidity()) return false;
   const size = data.coordinateSize;
-  const edits = queuedEdits();
+  const edits = queue.queuedEdits();
   const common = pendingStyle(data.style, undefined, edits);
   const region = changedCoordinates(regionFields);
   const marker = changedCoordinates(markerFields);
@@ -549,6 +569,7 @@ geometryForm.addEventListener("submit", event => {
 
 function commitStyleNumber(input: HTMLInputElement, property: NumericStyleProperty): boolean {
   if (!styleDrafts.has(input)) return true;
+  if (property === "markerDiameter" && !hasEditableGeometry()) return false;
   const data = state?.data;
   if (!data) return false;
   const id = styleDrafts.get(input);
@@ -561,7 +582,8 @@ function commitStyleNumber(input: HTMLInputElement, property: NumericStyleProper
     editError = "丸番号の直径は画像の短辺以下にしてください。";
   } else {
     styleDrafts.delete(input);
-    enqueue({ kind: "edit", edit: { kind: "style", id, property, value } });
+    const imageBasis = property === "markerDiameter" ? geometryBasis(data) : undefined;
+    enqueue({ kind: "edit", edit: { kind: "style", id, property, value, imageBasis } });
     return true;
   }
   renderNotice();
@@ -798,21 +820,22 @@ viewport.addEventListener("pointerdown", event => {
       return;
     }
     select(id, part);
-    if (!hasEditableGeometry()) return;
+    if (!state?.data || !hasEditableGeometry()) return;
+    const origin = geometryBasis(state.data, item);
     const start = imagePoint(point);
     if (!item) {
       const { width, height } = original.identity;
       if (start.x < 0 || start.y < 0 || start.x > width || start.y > height) return;
-      gesture = { ...pointer, kind: "add", start };
+      gesture = { ...pointer, kind: "add", start, origin };
     } else if (target.dataset.drag === "resize") {
       const anchor = {
         x: item.region.x + (target.dataset.x === "0" ? item.region.width : 0),
         y: item.region.y + (target.dataset.y === "0" ? item.region.height : 0),
       };
-      gesture = { ...pointer, kind: "resize", anchor, item };
+      gesture = { ...pointer, kind: "resize", anchor, item, origin };
     } else {
       const kind = target.dataset.drag === "marker" ? "marker" : "move";
-      gesture = { ...pointer, kind, start, item };
+      gesture = { ...pointer, kind, start, item, origin };
     }
   }
   viewport.setPointerCapture(event.pointerId);
@@ -896,14 +919,14 @@ viewport.addEventListener("pointerup", event => {
   }
   if (completed.kind !== "pan" && completed.preview && (completed.kind === "add" || dragDistance >= 3)) {
     if (completed.kind === "marker") {
-      enqueue({ kind: "edit", edit: { kind: "marker", id: completed.item.id, marker: completed.preview } });
+      enqueue({ kind: "edit", edit: { kind: "marker", id: completed.item.id, marker: completed.preview, origin: completed.origin } });
     } else if (completed.kind === "move") {
       const { x, y } = completed.preview;
-      enqueue({ kind: "edit", edit: { kind: "moveRegion", id: completed.item.id, position: { x, y } } });
+      enqueue({ kind: "edit", edit: { kind: "moveRegion", id: completed.item.id, position: { x, y }, origin: completed.origin } });
     } else if (completed.preview.width >= 1 && completed.preview.height >= 1) {
       const edit: Edit = completed.kind === "add"
-        ? { kind: "add", region: completed.preview }
-        : { kind: "region", id: completed.item.id, region: completed.preview };
+        ? { kind: "add", region: completed.preview, origin: completed.origin }
+        : { kind: "region", id: completed.item.id, region: completed.preview, origin: completed.origin };
       enqueue({ kind: "edit", edit });
     }
   }
@@ -934,10 +957,11 @@ selectButton.addEventListener("click", () => setMode("select"));
 drawButton.addEventListener("click", () => setMode("draw"));
 panButton.addEventListener("click", () => setMode("pan"));
 function removeSelection(): void {
+  if (!state?.data || !hasEditableGeometry()) return;
   const ids = selectedItems().map(({ id }) => id);
   if (!ids.length) return;
   select(undefined);
-  enqueue({ kind: "edit", edit: { kind: "remove", ids } });
+  enqueue({ kind: "edit", edit: { kind: "remove", ids, imageBasis: geometryBasis(state.data) } });
 }
 removeButton.addEventListener("click", removeSelection);
 const center = () => ({ x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });

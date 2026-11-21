@@ -2,39 +2,23 @@ import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import * as vscode from "vscode";
-import { applyAnnotationEdit, isAnnotationIds, isEdit, isMarkerAnchor, markerAnchors, newAnnotation, parseAnnotation, pasteAnnotations } from "./annotation";
-import type { AnnotationItem, MarkerAnchor } from "./annotation";
+import { markerAnchors, newAnnotation } from "./annotation";
+import type { MarkerAnchor } from "./annotation";
 import { materialIcon } from "./material-icons";
 import type { MaterialIconName } from "./material-icons";
 import { readOriginalImage, relativeImagePath, resolveImagePath, supportsImage } from "./original-image";
-import type { DocumentState, HostMessage } from "./protocol";
+import { isDocumentRequest, type HostMessage } from "./protocol";
+import { DocumentOperations, messageOf, readDocument, serialize, styleSetting } from "./document-operations";
 
 const viewType = "screenSpecAnnotator.annotations";
 const annotationSuffix = ".annotations.json";
-const styleSetting = "defaultStyle";
 
 function iconButton(icon: MaterialIconName, label: string, attributes: string, type = "button", title = label): string {
   return `<button type="${type}" class="icon-button" ${attributes} aria-label="${label}" title="${title}">${materialIcon(icon)}</button>`;
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function isAlreadyPresent(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "EEXIST";
-}
-
-function serialize(data: ReturnType<typeof newAnnotation>): string {
-  return JSON.stringify(data, null, 2) + "\n";
-}
-
-function readDocument(document: vscode.TextDocument): DocumentState {
-  try {
-    return { version: document.version, data: parseAnnotation(document.getText()) };
-  } catch (error) {
-    return { version: document.version, error: `${basename(document.uri.fsPath)}: ${messageOf(error)}` };
-  }
 }
 
 async function createAnnotation(uri?: vscode.Uri): Promise<void> {
@@ -87,10 +71,8 @@ async function createAnnotation(uri?: vscode.Uri): Promise<void> {
 }
 
 class AnnotationEditor implements vscode.CustomTextEditorProvider {
-  private readonly operations = new WeakMap<vscode.TextDocument, Promise<void>>();
+  private readonly operations = new DocumentOperations();
   private readonly panels = new Map<string, (message: HostMessage) => void>();
-  private copiedItems: AnnotationItem[] = [];
-  private clipboardOperations: Promise<void> = Promise.resolve();
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -168,73 +150,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
         void vscode.commands.executeCommand("vscode.openWith", document.uri, "default");
         return;
       }
-      if ((message.type !== "edit" && message.type !== "save" && message.type !== "saveDefaultStyle" &&
-           message.type !== "copyRects" && message.type !== "pasteRects") ||
-          !("request" in message) || typeof message.request !== "number" ||
-          !Number.isSafeInteger(message.request) ||
-          !("version" in message) || typeof message.version !== "number" ||
-          !Number.isSafeInteger(message.version)) return;
-
-      const { request, version } = message;
-      const edit = "edit" in message ? message.edit : undefined;
-      const previous = this.operations.get(document) ?? Promise.resolve();
-      const clipboardAction = message.type === "copyRects" || message.type === "pasteRects";
-      const pending = Promise.all([previous, clipboardAction ? this.clipboardOperations : undefined]).then(async () => {
-        try {
-          if (message.type === "save") {
-            if (!await document.save()) throw new Error("注釈ファイルを保存できませんでした。");
-            post({ type: "result", request, state: readDocument(document) });
-            return;
-          }
-
-          const state = readDocument(document);
-          if (!state.data) throw new Error(state.error);
-          if (state.version !== version) throw new Error("注釈が更新されました。最新の内容を確認してください。");
-          if (message.type === "saveDefaultStyle") {
-            await vscode.workspace.getConfiguration("screenSpecAnnotator")
-              .update(styleSetting, state.data.style, vscode.ConfigurationTarget.Global);
-            post({ type: "result", request, state: readDocument(document) });
-            return;
-          }
-          if (message.type === "copyRects") {
-            if (!("ids" in message) || !isAnnotationIds(message.ids)) throw new Error("コピーする矩形を選択してください。");
-            const ids = new Set(message.ids);
-            const items = state.data.items.filter(item => ids.has(item.id));
-            if (items.length !== ids.size) throw new Error("対象の矩形が見つかりません。");
-            this.copiedItems = items;
-            post({ type: "result", request, state });
-            return;
-          }
-
-          const generateId = () => randomBytes(5).toString("base64url").slice(0, 6);
-          let selectedIds: string[] | undefined;
-          if (message.type === "pasteRects") {
-            selectedIds = pasteAnnotations(state.data, this.copiedItems, generateId);
-          } else {
-            if (!isEdit(edit)) throw new Error("編集操作の内容が無効です。");
-            const configuredAnchor = edit.kind === "add"
-              ? vscode.workspace.getConfiguration("screenSpecAnnotator").get("defaultMarkerPosition")
-              : undefined;
-            const anchor = isMarkerAnchor(configuredAnchor) ? configuredAnchor : undefined;
-            const id = applyAnnotationEdit(state.data, edit, generateId, anchor);
-            if (id) selectedIds = [id];
-          }
-          const text = serialize(state.data);
-          if (text !== document.getText()) {
-            const transaction = new vscode.WorkspaceEdit();
-            const range = new vscode.Range(0, 0, document.lineCount, 0);
-            transaction.replace(document.uri, document.validateRange(range), text);
-            if (!await vscode.workspace.applyEdit(transaction)) {
-              throw new Error("注釈ファイルに変更を反映できませんでした。");
-            }
-          }
-          post({ type: "result", request, state: readDocument(document), selectedIds });
-        } catch (error) {
-          post({ type: "result", request, state: readDocument(document), error: messageOf(error) });
-        }
-      });
-      this.operations.set(document, pending);
-      if (clipboardAction) this.clipboardOperations = pending;
+      if (isDocumentRequest(message)) this.operations.enqueue(document, message, post);
     });
 
     panel.onDidDispose(() => {

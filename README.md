@@ -33,6 +33,12 @@
 
 型チェックは `npm run check`、ビルドは `npm run build` で実行します。
 
+Node.js 22.18 以降では `npm test` でモデル・送信キュー・通信形式の回帰試験を実行できます。実際の VS Code 文書を使う試験は「実行とデバッグ」の「Screen Spec Annotator 文書編集の統合試験」で起動します。Webview での保存操作は[保存・競合の確認手順](test/save-baseline.md)で検証できます。
+
+Python 3 と Python 版 Playwright がある環境では、`npm run test:webview` で本番バンドルをビルドし、専用プロファイルの VS Code でドラッグ中の外部更新、名称の競合、寸法不一致、保存後のJSONを確認できます。`VSCODE_EXECUTABLE` でデスクトップ版の実行ファイルを指定します。Windows では PATH 上の `code` からも検出します。
+
+ドラッグ中に対象の位置や原画像の基準が変わると、その操作は中止されます。名称の競合時は入力欄に自分の下書きが残り、最新の名称を見て再適用か破棄を選べます。画像と注釈の基準寸法が異なる間は、座標・丸番号の直径・項目削除をロックします。名称や色は引き続き編集できます。
+
 ## VSIXでインストールする
 
 VS Codeの拡張機能ビューのメニューで「VSIXからのインストール」を選び、`vscode-screen-spec-annotator-0.1.0.vsix` を指定します。操作ボタンのMaterial IconsはVSIXに同梱されているため、インストール後はオフラインでも表示されます。ボタンの機能名はポインターを重ねると確認できます。
