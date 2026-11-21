@@ -155,6 +155,9 @@ window.addEventListener("message", event => {
     case "image":
       if (message.imagePath === state?.data?.imagePath) void displayImage(message.image, message.error);
       break;
+    case "markerPreset":
+      if (hasEditableGeometry() && applyGeometry()) enqueue({ kind: "edit", edit: message.edit });
+      break;
     case "result":
       if (current?.request !== message.request) return;
       current = undefined;
@@ -628,7 +631,11 @@ function renderAnnotations(): void {
     if (regionSelected) appendSelectionHighlight(group, "rect", { ...rect });
     const radius = markerRadius(item.number, data.coordinateSize, style.markerDiameter);
     const circle = { cx: marker.x, cy: marker.y, r: radius };
-    markerGroup.append(svg("circle", { ...circle, ...stroke, class: "marker", "data-drag": "marker" }));
+    const markerShape = svg("circle", { ...circle, ...stroke, class: "marker", "data-drag": "marker" });
+    if (hasEditableGeometry()) markerShape.setAttribute("data-vscode-context", JSON.stringify({
+      webviewSection: "annotationMarker", annotationMarker: item.id, preventDefaultContextMenuItems: true,
+    }));
+    markerGroup.append(markerShape);
     if (markerSelected) appendSelectionHighlight(markerGroup, "circle", circle);
     const label = svg("text", {
       x: marker.x, y: marker.y, class: "marker-text",

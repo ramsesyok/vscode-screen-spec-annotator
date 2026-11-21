@@ -21,4 +21,5 @@ export type EditorMessage =
 export type HostMessage =
   | { type: "state"; state: DocumentState }
   | { type: "image"; imagePath: string; image?: OriginalImage; error?: string }
+  | { type: "markerPreset"; edit: Extract<Edit, { kind: "markerPreset" }> }
   | { type: "result"; request: number; state: DocumentState; selectedId?: string; error?: string };

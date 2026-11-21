@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import * as vscode from "vscode";
-import { applyAnnotationEdit, isEdit, newAnnotation, parseAnnotation } from "./annotation";
+import { applyAnnotationEdit, isEdit, markerAnchors, newAnnotation, parseAnnotation } from "./annotation";
+import type { MarkerAnchor } from "./annotation";
 import { readOriginalImage, relativeImagePath, resolveImagePath, supportsImage } from "./original-image";
 import type { DocumentState, HostMessage } from "./protocol";
 
@@ -79,8 +80,17 @@ async function createAnnotation(uri?: vscode.Uri): Promise<void> {
 
 class AnnotationEditor implements vscode.CustomTextEditorProvider {
   private readonly operations = new WeakMap<vscode.TextDocument, Promise<void>>();
+  private readonly panels = new Map<string, (message: HostMessage) => void>();
 
   constructor(private readonly extensionUri: vscode.Uri) {}
+
+  moveMarker(anchor: MarkerAnchor, args: unknown): void {
+    if (typeof args !== "object" || args === null ||
+        !("annotationPanel" in args) || typeof args.annotationPanel !== "string" ||
+        !("annotationMarker" in args)) return;
+    const edit = { kind: "markerPreset", id: args.annotationMarker, anchor } as const;
+    if (isEdit(edit)) this.panels.get(args.annotationPanel)?.({ type: "markerPreset", edit });
+  }
 
   resolveCustomTextEditor(document: vscode.TextDocument, panel: vscode.WebviewPanel): void {
     const assetFolders = ["dist", "media"].map(folder => vscode.Uri.joinPath(this.extensionUri, folder));
@@ -94,6 +104,8 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
     const post = (message: HostMessage) => {
       if (active) void panel.webview.postMessage(message);
     };
+    const panelToken = randomBytes(16).toString("hex");
+    this.panels.set(panelToken, post);
 
     const publish = () => {
       if (!ready) return;
@@ -179,13 +191,14 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
 
     panel.onDidDispose(() => {
       active = false;
+      this.panels.delete(panelToken);
       changes.dispose();
       messages.dispose();
     });
-    panel.webview.html = this.html(panel.webview);
+    panel.webview.html = this.html(panel.webview, panelToken);
   }
 
-  private html(webview: vscode.Webview): string {
+  private html(webview: vscode.Webview, panelToken: string): string {
     const nonce = randomBytes(16).toString("hex");
     const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "editor.js"));
     const style = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "editor.css"));
@@ -199,7 +212,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
 <link rel="stylesheet" href="${style}">
 </head>
 <body>
-<main id="editor">
+<main id="editor" data-vscode-context='{"annotationPanel":"${panelToken}"}'>
   <section id="image-panel" aria-label="画像と注釈">
     <div class="toolbar" role="group" aria-label="画像操作">
       <button id="draw" type="button" aria-pressed="true">矩形を追加</button>
@@ -298,8 +311,9 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  const editor = new AnnotationEditor(context.extensionUri);
   context.subscriptions.push(
-    vscode.window.registerCustomEditorProvider(viewType, new AnnotationEditor(context.extensionUri), {
+    vscode.window.registerCustomEditorProvider(viewType, editor, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
     vscode.commands.registerCommand("screenSpecAnnotator.create", async (uri?: vscode.Uri) => {
@@ -310,4 +324,9 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
   );
+  for (const anchor of Object.keys(markerAnchors) as MarkerAnchor[]) {
+    context.subscriptions.push(vscode.commands.registerCommand(
+      `screenSpecAnnotator.markerPosition.${anchor}`, (args: unknown) => editor.moveMarker(anchor, args),
+    ));
+  }
 }

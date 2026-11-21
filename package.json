@@ -19,9 +19,76 @@
         "command": "screenSpecAnnotator.create",
         "title": "画面注釈を作成",
         "category": "Screen Spec Annotator"
-      }
+      },
+      { "command": "screenSpecAnnotator.markerPosition.top-left", "title": "左上" },
+      { "command": "screenSpecAnnotator.markerPosition.middle-left", "title": "左中央" },
+      { "command": "screenSpecAnnotator.markerPosition.bottom-left", "title": "左下" },
+      { "command": "screenSpecAnnotator.markerPosition.top-right", "title": "右上" },
+      { "command": "screenSpecAnnotator.markerPosition.middle-right", "title": "右中央" },
+      { "command": "screenSpecAnnotator.markerPosition.bottom-right", "title": "右下" },
+      { "command": "screenSpecAnnotator.markerPosition.top-center", "title": "中央上" },
+      { "command": "screenSpecAnnotator.markerPosition.center", "title": "中央" },
+      { "command": "screenSpecAnnotator.markerPosition.bottom-center", "title": "中央下" }
     ],
     "menus": {
+      "commandPalette": [
+        { "command": "screenSpecAnnotator.markerPosition.top-left", "when": "false" },
+        { "command": "screenSpecAnnotator.markerPosition.middle-left", "when": "false" },
+        { "command": "screenSpecAnnotator.markerPosition.bottom-left", "when": "false" },
+        { "command": "screenSpecAnnotator.markerPosition.top-right", "when": "false" },
+        { "command": "screenSpecAnnotator.markerPosition.middle-right", "when": "false" },
+        { "command": "screenSpecAnnotator.markerPosition.bottom-right", "when": "false" },
+        { "command": "screenSpecAnnotator.markerPosition.top-center", "when": "false" },
+        { "command": "screenSpecAnnotator.markerPosition.center", "when": "false" },
+        { "command": "screenSpecAnnotator.markerPosition.bottom-center", "when": "false" }
+      ],
+      "webview/context": [
+        {
+          "command": "screenSpecAnnotator.markerPosition.top-left",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
+          "group": "navigation@1"
+        },
+        {
+          "command": "screenSpecAnnotator.markerPosition.middle-left",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
+          "group": "navigation@2"
+        },
+        {
+          "command": "screenSpecAnnotator.markerPosition.bottom-left",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
+          "group": "navigation@3"
+        },
+        {
+          "command": "screenSpecAnnotator.markerPosition.top-right",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
+          "group": "navigation@4"
+        },
+        {
+          "command": "screenSpecAnnotator.markerPosition.middle-right",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
+          "group": "navigation@5"
+        },
+        {
+          "command": "screenSpecAnnotator.markerPosition.bottom-right",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
+          "group": "navigation@6"
+        },
+        {
+          "command": "screenSpecAnnotator.markerPosition.top-center",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
+          "group": "navigation@7"
+        },
+        {
+          "command": "screenSpecAnnotator.markerPosition.center",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
+          "group": "navigation@8"
+        },
+        {
+          "command": "screenSpecAnnotator.markerPosition.bottom-center",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
+          "group": "navigation@9"
+        }
+      ],
       "explorer/context": [
         {
           "command": "screenSpecAnnotator.create",

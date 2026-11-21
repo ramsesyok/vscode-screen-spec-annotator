@@ -22,6 +22,19 @@ export type PlacementTarget = ShapePart | "pair";
 export type PlacementSubject = { id: string; part: PlacementTarget };
 export type GeometryChange = { id: string; region?: Partial<Region>; marker?: Partial<Point> };
 
+export const markerAnchors = {
+  "top-left": [0, 0],
+  "middle-left": [0, 0.5],
+  "bottom-left": [0, 1],
+  "top-right": [1, 0],
+  "middle-right": [1, 0.5],
+  "bottom-right": [1, 1],
+  "top-center": [0.5, 0],
+  center: [0.5, 0.5],
+  "bottom-center": [0.5, 1],
+} as const;
+export type MarkerAnchor = keyof typeof markerAnchors;
+
 export interface ShapeStyle {
   color: string;
   lineStyle: LineStyle;
@@ -69,6 +82,7 @@ export type Edit =
   | { kind: "add"; region: Region }
   | { kind: "region"; id: string; region: Region }
   | { kind: "marker"; id: string; marker: Point }
+  | { kind: "markerPreset"; id: string; anchor: MarkerAnchor }
   | { kind: "geometry"; changes: GeometryChange[] }
   | PlacementEdit
   | StyleEdit
@@ -244,6 +258,7 @@ export function isEdit(value: unknown): value is Edit {
   switch (value.kind) {
     case "region": return isRegion(value.region);
     case "marker": return isPoint(value.marker);
+    case "markerPreset": return typeof value.anchor === "string" && Object.hasOwn(markerAnchors, value.anchor);
     case "name": return typeof value.name === "string";
     case "remove": return true;
     default: return false;
@@ -468,6 +483,21 @@ export function applyAnnotationEdit(
     case "marker":
       item.marker = constrainMarker(edit.marker, item.number, size, effectiveMarkerDiameter(data.style, item));
       break;
+    case "markerPreset": {
+      const [horizontal, vertical] = markerAnchors[edit.anchor];
+      const { x, y, width, height } = item.region;
+      const point = { x: x + width * horizontal, y: y + height * vertical };
+      const diameter = effectiveMarkerDiameter(data.style, item);
+      if (edit.anchor === "center") {
+        if (!markerFits(point, item.number, size, diameter)) {
+          throw new Error("矩形の中央に丸番号が収まりません。丸番号の直径を小さくしてください。");
+        }
+        item.marker = point;
+      } else {
+        item.marker = constrainMarker(point, item.number, size, diameter);
+      }
+      break;
+    }
     case "name":
       item.name = edit.name;
       break;
