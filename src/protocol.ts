@@ -16,10 +16,13 @@ export type EditorMessage =
   | { type: "ready" }
   | { type: "openJson" }
   | { type: "edit"; request: number; version: number; edit: Edit }
-  | { type: "save" | "saveDefaultStyle"; request: number; version: number };
+  | { type: "copyRects"; request: number; version: number; ids: string[] }
+  | { type: "save" | "saveDefaultStyle" | "pasteRects"; request: number; version: number };
 
 export type HostMessage =
   | { type: "state"; state: DocumentState }
   | { type: "image"; imagePath: string; image?: OriginalImage; error?: string }
   | { type: "markerPreset"; id: string; anchor: MarkerAnchor }
-  | { type: "result"; request: number; state: DocumentState; selectedId?: string; error?: string };
+  | { type: "copyRects"; id: string }
+  | { type: "pasteRects" }
+  | { type: "result"; request: number; state: DocumentState; selectedIds?: string[]; error?: string };

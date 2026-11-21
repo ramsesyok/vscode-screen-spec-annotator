@@ -239,8 +239,7 @@ export function isEdit(value: unknown): value is Edit {
   if (!isRecord(value)) return false;
   if (value.kind === "add") return isRegion(value.region);
   if (value.kind === "remove" || value.kind === "markerPreset") {
-    return Array.isArray(value.ids) && value.ids.length > 0 && value.ids.every(isItemId) &&
-      new Set(value.ids).size === value.ids.length &&
+    return isAnnotationIds(value.ids) &&
       (value.kind === "remove" || isMarkerAnchor(value.anchor));
   }
   if (value.kind === "geometry") {
@@ -274,6 +273,10 @@ export function isEdit(value: unknown): value is Edit {
     case "name": return typeof value.name === "string";
     default: return false;
   }
+}
+
+export function isAnnotationIds(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length > 0 && value.every(isItemId) && new Set(value).size === value.length;
 }
 
 export function clamp(value: number, minimum: number, maximum: number): number {
@@ -487,6 +490,46 @@ function editAnnotationStyle(data: AnnotationDocument, edit: StyleEdit): void {
   }
 }
 
+function allocateItemId(used: Set<string>, generateId: () => string): string {
+  let id = generateId();
+  for (let attempt = 1; used.has(id) && attempt < 10; attempt++) id = generateId();
+  if (!isItemId(id) || used.has(id)) throw new Error("一意の項目IDを生成できませんでした。");
+  used.add(id);
+  return id;
+}
+
+export function pasteAnnotations(data: AnnotationDocument, copied: readonly AnnotationItem[], generateId: () => string): string[] {
+  if (!copied.length) throw new Error("コピーした矩形がありません。");
+  const size = data.coordinateSize;
+  const used = new Set(data.items.map(item => item.id));
+  const items = copied.map((source, index) => {
+    const number = data.highestIssuedNumber + index + 1;
+    if (!Number.isSafeInteger(number)) throw new Error("新規項目に割り当てられる番号がありません。");
+    const item = structuredClone(source);
+    return { ...item, id: allocateItemId(used, generateId), number };
+  });
+  const bounds = items.map(item => placementBounds(item, "pair", size, data.style));
+  const left = Math.min(...bounds.map(box => box.x));
+  const top = Math.min(...bounds.map(box => box.y));
+  const right = Math.max(...bounds.map(box => box.x + box.width));
+  const bottom = Math.max(...bounds.map(box => box.y + box.height));
+  if (right - left > size.width || bottom - top > size.height) {
+    throw new Error("コピーした矩形と丸番号が貼り付け先の画像に収まりません。");
+  }
+  const offsetX = clamp(right < size.width ? 12 : -12, -left, size.width - right);
+  const offsetY = clamp(bottom < size.height ? 12 : -12, -top, size.height - bottom);
+  for (const item of items) {
+    const x = item.region.x + offsetX;
+    const y = item.region.y + offsetY;
+    Object.assign(item, updatedGeometry(item, {
+      id: item.id, region: { x, y }, marker: { x: item.marker.x + offsetX, y: item.marker.y + offsetY },
+    }, size, data.style));
+  }
+  data.items.push(...items);
+  data.highestIssuedNumber += items.length;
+  return items.map(item => item.id);
+}
+
 export function applyAnnotationEdit(
   data: AnnotationDocument,
   edit: Edit,
@@ -537,9 +580,7 @@ export function applyAnnotationEdit(
     const { region } = edit;
     const marker = constrainMarker(markerAnchorPoint(region, defaultMarkerAnchor), number, size, data.style.markerDiameter);
     const used = new Set(data.items.map(item => item.id));
-    let id = generateId();
-    for (let attempt = 1; used.has(id) && attempt < 10; attempt++) id = generateId();
-    if (!isItemId(id) || used.has(id)) throw new Error("一意の項目IDを生成できませんでした。");
+    const id = allocateItemId(used, generateId);
     data.items.push({ id, number, name: "", region, marker, values: {} });
     data.highestIssuedNumber = number;
     return id;

@@ -92,7 +92,8 @@ type Gesture =
   | { kind: "marker"; start: Point; item: AnnotationItem; preview?: Point };
 let gesture: (Gesture & { pointer: number; pointerStart: Point }) | undefined;
 
-type QueuedOperation = { kind: "save" | "saveDefaultStyle" } | { kind: "edit"; edit: Edit };
+type QueuedOperation = { kind: "save" | "saveDefaultStyle" | "pasteRects" } |
+  { kind: "copyRects"; ids: string[] } | { kind: "edit"; edit: Edit };
 const pending: QueuedOperation[] = [];
 let current: { operation: QueuedOperation; request: number } | undefined;
 let nextRequest = 0;
@@ -120,6 +121,8 @@ function sendNext(): void {
   const version = state.version;
   if (operation.kind === "edit") {
     vscode.postMessage({ type: "edit", request, version, edit: operation.edit });
+  } else if (operation.kind === "copyRects") {
+    vscode.postMessage({ type: operation.kind, request, version, ids: operation.ids });
   } else {
     vscode.postMessage({ type: operation.kind, request, version });
   }
@@ -166,6 +169,12 @@ window.addEventListener("message", event => {
       }
       break;
     }
+    case "copyRects":
+      copyRectangles(selection.region.has(message.id) ? [...selection.region] : [message.id]);
+      break;
+    case "pasteRects":
+      pasteRectangles();
+      break;
     case "result":
       if (current?.request !== message.request) return;
       const { operation } = current;
@@ -174,13 +183,16 @@ window.addEventListener("message", event => {
         editError = message.error;
         // Skip pending saves when an earlier edit in the queue fails.
         for (let i = pending.length - 1; i >= 0; i--) {
-          if (pending[i].kind !== "edit") pending.splice(i, 1);
+          if (pending[i].kind === "save" || pending[i].kind === "saveDefaultStyle") pending.splice(i, 1);
         }
       } else if (operation.kind === "saveDefaultStyle") {
         editStatus = "新規画像の既定スタイルを VS Code の設定に保存しました。";
+      } else if (operation.kind === "copyRects") {
+        editStatus = `${operation.ids.length}件の矩形をコピーしました。`;
       }
-      if (message.selectedId) {
-        setSelection(message.selectedId, "pair", false);
+      if (message.selectedIds?.length) {
+        setSelection(undefined, "pair", false);
+        for (const id of message.selectedIds) setSelection(id, "pair", true);
       }
       applyState(message.state);
       sendNext();
@@ -255,6 +267,11 @@ function render(): void {
   selectButton.disabled = !original;
   drawButton.disabled = !hasEditableGeometry();
   panButton.disabled = !original;
+  if (hasEditableGeometry()) {
+    viewport.setAttribute("data-vscode-context", '{"webviewSection":"annotationCanvas","preventDefaultContextMenuItems":true}');
+  } else {
+    viewport.removeAttribute("data-vscode-context");
+  }
 }
 
 interface RowControls {
@@ -423,18 +440,17 @@ function renderProperties(): void {
   }
   removeButton.disabled = !items.length;
   geometryFields.disabled = !canEditGeometry;
-  const key = items.map(({ id }) =>
-    `${id}:${Number(selection.region.has(id))}${Number(selection.marker.has(id))}`).join(",");
+  const key = items.map(({ id }) => id).join(",");
   if (key !== geometrySelection) {
     geometrySelection = key;
     changedInputs.clear();
     geometryError.hidden = true;
   }
-  geometryTitle.textContent = item ? `${item.number}番の位置とサイズ（px）` : "選択した図形の位置とサイズ（px）";
+  geometryTitle.textContent = item ? `${item.number}番の位置とサイズ（px）` : "選択した項目の位置とサイズ（px）";
   const edits = queuedEdits();
   const draft = pendingGeometry(items, edits);
-  renderCoordinates(regionFields, draft.filter(entry => selection.region.has(entry.id)).map(entry => entry.region));
-  renderCoordinates(markerFields, draft.filter(entry => selection.marker.has(entry.id)).map(entry => entry.marker));
+  renderCoordinates(regionFields, draft.map(entry => entry.region));
+  renderCoordinates(markerFields, draft.map(entry => entry.marker));
   if (!item || !data) return;
   const style = pendingStyle(data.style, undefined, edits);
   const overrides = pendingStyle(item.style ?? {}, item.id, edits);
@@ -490,8 +506,7 @@ function applyGeometry(): boolean {
   const changes: GeometryChange[] = [];
   try {
     for (const item of pendingGeometry(selectedItems(), edits)) {
-      const change = { id: item.id, region: selection.region.has(item.id) ? region : undefined,
-        marker: selection.marker.has(item.id) ? marker : undefined };
+      const change = { id: item.id, region, marker };
       if (!change.region && !change.marker) continue;
       const draft = { ...item, style: pendingStyle(item.style ?? {}, item.id, edits) };
       const diameter = effectiveMarkerDiameter(common, draft);
@@ -630,6 +645,7 @@ function renderAnnotations(): void {
   annotations.replaceChildren();
   const data = state?.data;
   if (!data || !original) return;
+  const editable = hasEditableGeometry();
   const resizeEnabled = selection.region.size === 1 && selectedItems().length === 1 &&
     mode !== "pan" && hasEditableGeometry();
   const markers = svg("g", {});
@@ -639,6 +655,9 @@ function renderAnnotations(): void {
     const regionSelected = selection.region.has(item.id);
     const markerSelected = selection.marker.has(item.id);
     const group = svg("g", { "data-id": item.id });
+    if (editable) group.setAttribute("data-vscode-context", JSON.stringify({
+      webviewSection: "annotationRegion", annotationRegion: item.id,
+    }));
     const markerGroup = svg("g", { "data-id": item.id });
     const active = gesture && "item" in gesture && gesture.item.id === item.id ? gesture : undefined;
     const rect = (active?.kind === "move" || active?.kind === "resize") ? active.preview ?? item.region : item.region;
@@ -654,7 +673,7 @@ function renderAnnotations(): void {
     const radius = markerRadius(item.number, data.coordinateSize, style.markerDiameter);
     const circle = { cx: marker.x, cy: marker.y, r: radius };
     const markerShape = svg("circle", { ...circle, ...stroke, class: "marker", "data-drag": "marker" });
-    if (hasEditableGeometry()) markerShape.setAttribute("data-vscode-context", JSON.stringify({
+    if (editable) markerShape.setAttribute("data-vscode-context", JSON.stringify({
       webviewSection: "annotationMarker", annotationMarker: item.id, preventDefaultContextMenuItems: true,
     }));
     markerGroup.append(markerShape);
@@ -920,8 +939,18 @@ splitter.addEventListener("keydown", event => {
   setSplit(currentHeight + (event.key === "ArrowUp" ? -5 : 5));
 });
 
+function copyRectangles(ids: string[]): void {
+  if (ids.length && hasEditableGeometry() && applyGeometry()) enqueue({ kind: "copyRects", ids });
+}
+
+function pasteRectangles(): void {
+  if (hasEditableGeometry() && applyGeometry()) enqueue({ kind: "pasteRects" });
+}
+
 window.addEventListener("keydown", event => {
   if (event.isComposing) return;
+  const target = event.target;
+  const editingInput = target instanceof Element && target.closest('input:not([type="checkbox"]), textarea, select, [contenteditable]');
   if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
     if (event.key === "Escape" && (gesture || selection.region.size || selection.marker.size)) {
       if (gesture && viewport.hasPointerCapture(gesture.pointer)) viewport.releasePointerCapture(gesture.pointer);
@@ -932,17 +961,25 @@ window.addEventListener("keydown", event => {
       event.stopImmediatePropagation();
       return;
     }
-    const target = event.target;
-    if (event.key === "Delete" && !gesture && (selection.region.size || selection.marker.size) &&
-        !(target instanceof Element && target.closest('input:not([type="checkbox"]), textarea, select, [contenteditable]'))) {
+    if (event.key === "Delete" && !gesture && (selection.region.size || selection.marker.size) && !editingInput) {
       removeSelection();
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
     }
   }
-  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey ||
-      event.key.toLowerCase() !== "s" || !state?.data) return;
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || !state?.data) return;
+  const key = event.key.toLowerCase();
+  if (!editingInput && !gesture && hasEditableGeometry() &&
+      ((key === "c" && selection.region.size) || key === "v")) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.repeat) return;
+    if (key === "c") copyRectangles([...selection.region]);
+    else pasteRectangles();
+    return;
+  }
+  if (key !== "s") return;
   event.preventDefault();
   event.stopImmediatePropagation();
   if (!numericStyleFields.every(({ input, property }) => commitStyleNumber(input, property))) return;

@@ -42,6 +42,8 @@
       }
     },
     "commands": [
+      { "command": "screenSpecAnnotator.copyRects", "title": "矩形をコピー" },
+      { "command": "screenSpecAnnotator.pasteRects", "title": "矩形を貼り付け" },
       {
         "command": "screenSpecAnnotator.create",
         "title": "画面注釈を作成",
@@ -59,6 +61,8 @@
     ],
     "menus": {
       "commandPalette": [
+        { "command": "screenSpecAnnotator.copyRects", "when": "false" },
+        { "command": "screenSpecAnnotator.pasteRects", "when": "false" },
         { "command": "screenSpecAnnotator.markerPosition.top-left", "when": "false" },
         { "command": "screenSpecAnnotator.markerPosition.middle-left", "when": "false" },
         { "command": "screenSpecAnnotator.markerPosition.bottom-left", "when": "false" },
@@ -70,6 +74,16 @@
         { "command": "screenSpecAnnotator.markerPosition.bottom-center", "when": "false" }
       ],
       "webview/context": [
+        {
+          "command": "screenSpecAnnotator.copyRects",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationRegion",
+          "group": "navigation@1"
+        },
+        {
+          "command": "screenSpecAnnotator.pasteRects",
+          "when": "webviewId == screenSpecAnnotator.annotations && webviewSection =~ /^annotation(Canvas|Region)$/",
+          "group": "navigation@2"
+        },
         {
           "command": "screenSpecAnnotator.markerPosition.top-left",
           "when": "webviewId == screenSpecAnnotator.annotations && webviewSection == annotationMarker",
