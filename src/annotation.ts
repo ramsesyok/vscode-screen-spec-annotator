@@ -35,6 +35,10 @@ export const markerAnchors = {
 } as const;
 export type MarkerAnchor = keyof typeof markerAnchors;
 
+export function isMarkerAnchor(value: unknown): value is MarkerAnchor {
+  return typeof value === "string" && Object.hasOwn(markerAnchors, value);
+}
+
 export interface ShapeStyle {
   color: string;
   lineStyle: LineStyle;
@@ -242,7 +246,7 @@ export function isEdit(value: unknown): value is Edit {
   if (value.kind === "remove" || value.kind === "markerPreset") {
     return Array.isArray(value.ids) && value.ids.length > 0 && value.ids.every(isItemId) &&
       new Set(value.ids).size === value.ids.length &&
-      (value.kind === "remove" || (typeof value.anchor === "string" && Object.hasOwn(markerAnchors, value.anchor)));
+      (value.kind === "remove" || isMarkerAnchor(value.anchor));
   }
   if (value.kind === "geometry") {
     return Array.isArray(value.changes) && value.changes.length > 0 && value.changes.every(isGeometryChange) &&
@@ -309,6 +313,11 @@ export function constrainMarker(point: Point, number: number, size: Size, diamet
     x: clamp(point.x, radius, size.width - radius),
     y: clamp(point.y, radius, size.height - radius),
   };
+}
+
+function markerAnchorPoint(region: Region, anchor: MarkerAnchor): Point {
+  const [horizontal, vertical] = markerAnchors[anchor];
+  return { x: region.x + region.width * horizontal, y: region.y + region.height * vertical };
 }
 
 export function regionFits(region: Region, size: Size): boolean {
@@ -491,6 +500,7 @@ export function applyAnnotationEdit(
   data: AnnotationDocument,
   edit: Edit,
   generateId: () => string,
+  defaultMarkerAnchor: MarkerAnchor = "top-right",
 ): string | undefined {
   const size = data.coordinateSize;
   if ((edit.kind === "add" || edit.kind === "region") && !regionFits(edit.region, size)) {
@@ -517,10 +527,8 @@ export function applyAnnotationEdit(
       const ids = new Set(edit.ids);
       data.items = data.items.filter(item => !ids.has(item.id));
     } else {
-      const [horizontal, vertical] = markerAnchors[edit.anchor];
       const markers = targets.map(item => {
-        const { x, y, width, height } = item.region;
-        const point = { x: x + width * horizontal, y: y + height * vertical };
+        const point = markerAnchorPoint(item.region, edit.anchor);
         const diameter = effectiveMarkerDiameter(data.style, item);
         if (edit.anchor !== "center") return constrainMarker(point, item.number, size, diameter);
         if (!markerFits(point, item.number, size, diameter)) {
@@ -536,9 +544,7 @@ export function applyAnnotationEdit(
     const number = data.highestIssuedNumber + 1;
     if (!Number.isSafeInteger(number)) throw new Error("新規項目に割り当てられる番号がありません。");
     const { region } = edit;
-    const diameter = data.style.markerDiameter;
-    const radius = markerRadius(number, size, diameter);
-    const marker = constrainMarker({ x: region.x + region.width + radius, y: region.y }, number, size, diameter);
+    const marker = constrainMarker(markerAnchorPoint(region, defaultMarkerAnchor), number, size, data.style.markerDiameter);
     const used = new Set(data.items.map(item => item.id));
     let id = generateId();
     for (let attempt = 1; used.has(id) && attempt < 10; attempt++) id = generateId();

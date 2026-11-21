@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import * as vscode from "vscode";
-import { applyAnnotationEdit, isEdit, markerAnchors, newAnnotation, parseAnnotation } from "./annotation";
+import { applyAnnotationEdit, isEdit, isMarkerAnchor, markerAnchors, newAnnotation, parseAnnotation } from "./annotation";
 import type { MarkerAnchor } from "./annotation";
 import { materialIcon } from "./material-icons";
 import type { MaterialIconName } from "./material-icons";
@@ -184,7 +184,12 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
           }
           if (!isEdit(edit)) throw new Error("編集操作の内容が無効です。");
 
-          const selectedId = applyAnnotationEdit(state.data, edit, () => randomBytes(5).toString("base64url").slice(0, 6));
+          const configuredAnchor = edit.kind === "add"
+            ? vscode.workspace.getConfiguration("screenSpecAnnotator").get("defaultMarkerPosition")
+            : undefined;
+          const anchor = isMarkerAnchor(configuredAnchor) ? configuredAnchor : undefined;
+          const selectedId = applyAnnotationEdit(state.data, edit,
+            () => randomBytes(5).toString("base64url").slice(0, 6), anchor);
           const text = serialize(state.data);
           if (text !== document.getText()) {
             const transaction = new vscode.WorkspaceEdit();

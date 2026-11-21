@@ -18,6 +18,14 @@
     "configuration": {
       "title": "Screen Spec Annotator",
       "properties": {
+        "screenSpecAnnotator.defaultMarkerPosition": {
+          "type": "string",
+          "scope": "application",
+          "description": "矩形を追加したときの、矩形に対する丸番号の初期位置です。",
+          "default": "top-right",
+          "enum": ["top-left", "middle-left", "bottom-left", "top-right", "middle-right", "bottom-right", "top-center", "center", "bottom-center"],
+          "enumItemLabels": ["左上", "左中央", "左下", "右上", "右中央", "右下", "中央上", "中央", "中央下"]
+        },
         "screenSpecAnnotator.defaultStyle": {
           "type": "object",
           "scope": "application",
