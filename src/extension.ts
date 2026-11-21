@@ -221,7 +221,8 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
 <main id="editor" data-vscode-context='{"annotationPanel":"${panelToken}"}'>
   <section id="image-panel" aria-label="画像と注釈">
     <div class="toolbar" role="group" aria-label="画像操作">
-      ${iconButton("add_box", "矩形を追加", 'id="draw" aria-pressed="true"')}
+      ${iconButton("highlight_alt", "図形を選択", 'id="select" aria-pressed="true"')}
+      ${iconButton("add_box", "矩形を追加", 'id="draw" aria-pressed="false"')}
       ${iconButton("pan_tool", "パン", 'id="pan" aria-pressed="false"')}
       ${iconButton("zoom_out", "縮小", 'id="zoom-out"')}
       ${iconButton("zoom_in", "拡大", 'id="zoom-in"')}

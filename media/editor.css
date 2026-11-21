@@ -59,10 +59,10 @@ button:disabled { opacity: .55; cursor: default; }
   min-height: 0;
   overflow: hidden;
   background: var(--vscode-sideBar-background);
-  cursor: crosshair;
   user-select: none;
   touch-action: none;
 }
+#viewport.draw { cursor: crosshair; }
 #viewport.pan { cursor: grab; }
 #viewport.pan:active { cursor: grabbing; }
 #surface { position: absolute; left: 0; top: 0; transform-origin: 0 0; }

@@ -29,6 +29,7 @@ const empty = element<HTMLElement>("empty");
 const splitter = element<HTMLElement>("splitter");
 const jsonActions = element<HTMLElement>("json-actions");
 const zoom = element<HTMLOutputElement>("zoom");
+const selectButton = element<HTMLButtonElement>("select");
 const drawButton = element<HTMLButtonElement>("draw");
 const panButton = element<HTMLButtonElement>("pan");
 const removeButton = element<HTMLButtonElement>("remove");
@@ -76,7 +77,7 @@ let editError: string | undefined;
 let imageRequest = 0;
 const selection = { region: new Set<string>(), marker: new Set<string>() };
 const shapeParts = ["region", "marker"] as const;
-let mode: "draw" | "pan" = "draw";
+let mode: "select" | "draw" | "pan" = "select";
 let scale = 1;
 let offset: Point = { x: 0, y: 0 };
 let geometrySelection = "";
@@ -85,7 +86,7 @@ const changedInputs = new Set<HTMLInputElement>();
 type Gesture =
   | { kind: "pan"; start: Point; offset: Point }
   | { kind: "add"; start: Point; preview?: Region }
-  | { kind: "select-box"; start: Point; subject?: { id: string; part: ShapePart }; preview?: Region }
+  | { kind: "select-box"; start: Point; additive: boolean; subject?: { id: string; part: ShapePart }; preview?: Region }
   | { kind: "move"; start: Point; item: AnnotationItem; preview?: Region }
   | { kind: "resize"; anchor: Point; item: AnnotationItem; preview?: Region }
   | { kind: "marker"; start: Point; item: AnnotationItem; preview?: Point };
@@ -242,6 +243,7 @@ function render(): void {
   renderImageStyle();
   renderProperties();
   zoomIn.disabled = zoomOut.disabled = fitButton.disabled = !original;
+  selectButton.disabled = !original;
   drawButton.disabled = !hasEditableGeometry();
   panButton.disabled = !original;
 }
@@ -621,7 +623,7 @@ function renderAnnotations(): void {
   const data = state?.data;
   if (!data || !original) return;
   const resizeEnabled = selection.region.size === 1 && selectedItems().length === 1 &&
-    mode === "draw" && hasEditableGeometry();
+    mode !== "pan" && hasEditableGeometry();
   const markers = svg("g", {});
   const selectedRegions: SVGGElement[] = [];
   const selectedMarkers: SVGGElement[] = [];
@@ -728,8 +730,8 @@ viewport.addEventListener("pointerdown", event => {
   const item = state?.data?.items.find(entry => entry.id === id);
   const part = target.dataset.drag === "marker" ? "marker" : "region";
   const pointer = { pointer: event.pointerId, pointerStart: point };
-  if (event.button === 0 && event.shiftKey) {
-    gesture = { ...pointer, kind: "select-box", start: imagePoint(point),
+  if (event.button === 0 && (event.shiftKey || (mode === "select" && !item))) {
+    gesture = { ...pointer, kind: "select-box", start: imagePoint(point), additive: event.shiftKey,
       subject: item && { id: item.id, part } };
   } else if (mode === "pan" || event.button === 1) {
     gesture = { ...pointer, kind: "pan", start: point, offset };
@@ -798,9 +800,10 @@ function preview(event: PointerEvent): void {
   renderAnnotations();
 }
 
-function selectInBox(box: Region): void {
+function selectInBox(box: Region, additive: boolean): void {
   const data = state?.data;
   if (!data) return;
+  if (!additive) setSelection(undefined, "pair", false);
   for (const item of data.items) {
     for (const part of shapeParts) {
       const bounds = placementBounds(item, part, data.coordinateSize, data.style);
@@ -825,9 +828,11 @@ viewport.addEventListener("pointerup", event => {
   if (completed.kind === "select-box") {
     const box = completed.preview;
     if (box && dragDistance >= 4) {
-      selectInBox(box);
+      selectInBox(box, completed.additive);
     } else if (completed.subject) {
       select(completed.subject.id, completed.subject.part, true);
+    } else if (!completed.additive) {
+      select(undefined);
     } else {
       renderAnnotations();
     }
@@ -862,11 +867,14 @@ viewport.addEventListener("wheel", event => {
 
 function setMode(next: typeof mode): void {
   mode = next;
+  selectButton.setAttribute("aria-pressed", String(mode === "select"));
   drawButton.setAttribute("aria-pressed", String(mode === "draw"));
   panButton.setAttribute("aria-pressed", String(mode === "pan"));
+  viewport.classList.toggle("draw", mode === "draw");
   viewport.classList.toggle("pan", mode === "pan");
   renderAnnotations();
 }
+selectButton.addEventListener("click", () => setMode("select"));
 drawButton.addEventListener("click", () => setMode("draw"));
 panButton.addEventListener("click", () => setMode("pan"));
 removeButton.addEventListener("click", () => {
