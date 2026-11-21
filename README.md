@@ -33,6 +33,8 @@
 
 型チェックは `npm run check`、ビルドは `npm run build` で実行します。
 
+Node.js 22.18 以降では `npm test` でモデル・送信キュー・通信形式の回帰試験を実行できます。実際の VS Code 文書を使う試験は「実行とデバッグ」の「Screen Spec Annotator 文書編集の統合試験」で起動します。Webview での保存操作は[保存・競合の確認手順](test/save-baseline.md)で検証できます。
+
 ## VSIXでインストールする
 
 VS Codeの拡張機能ビューのメニューで「VSIXからのインストール」を選び、`vscode-screen-spec-annotator-0.1.0.vsix` を指定します。操作ボタンのMaterial IconsはVSIXに同梱されているため、インストール後はオフラインでも表示されます。ボタンの機能名はポインターを重ねると確認できます。

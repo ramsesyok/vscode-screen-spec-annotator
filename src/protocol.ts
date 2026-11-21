@@ -26,3 +26,22 @@ export type HostMessage =
   | { type: "copyRects"; id: string }
   | { type: "pasteRects" }
   | { type: "result"; request: number; state: DocumentState; selectedIds?: string[]; error?: string };
+
+// Validate payloads when executing the request, so a malformed edit still gets
+// a result for its request number and does not stall the Webview queue.
+export type DocumentRequest = {
+  request: number;
+  version: number;
+} & (
+  | { type: "edit"; edit?: unknown }
+  | { type: "copyRects"; ids?: unknown }
+  | { type: "save" | "saveDefaultStyle" | "pasteRects" }
+);
+
+export function isDocumentRequest(message: unknown): message is DocumentRequest {
+  return typeof message === "object" && message !== null && "type" in message &&
+    (message.type === "edit" || message.type === "save" || message.type === "saveDefaultStyle" ||
+      message.type === "copyRects" || message.type === "pasteRects") &&
+    "request" in message && Number.isSafeInteger(message.request) &&
+    "version" in message && Number.isSafeInteger(message.version);
+}

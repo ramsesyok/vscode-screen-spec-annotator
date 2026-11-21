@@ -7,6 +7,16 @@
       "request": "launch",
       "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
       "preLaunchTask": "npm: build"
+    },
+    {
+      "name": "Screen Spec Annotator 文書編集の統合試験",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--extensionTestsPath=${workspaceFolder}/node_modules/.cache/screen-spec-host-test.cjs"
+      ],
+      "preLaunchTask": "npm: build:host-test"
     }
   ]
 }

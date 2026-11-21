@@ -1,3 +1,4 @@
+import { OperationQueue, type QueuedOperation } from "./operation-queue";
 import {
   applyStyleValue, clamp, constrainMarker, constrainRegionPosition, defaultMarkerColors, defaultStrokeWidth, effectiveMarkerDiameter,
   isAlignment, isDistributionDirection, isLineStyle, isMarkerAnchor, markerAfterRegionMove, markerRadius, placementBounds, regionBetween, updatedGeometry,
@@ -99,44 +100,14 @@ type Gesture =
   | { kind: "marker"; start: Point; item: AnnotationItem; preview?: Point };
 let gesture: (Gesture & { pointer: number; pointerStart: Point }) | undefined;
 
-type QueuedOperation = { kind: "save" | "saveDefaultStyle" | "pasteRects" } |
-  { kind: "copyRects"; ids: string[] } | { kind: "edit"; edit: Edit };
-const pending: QueuedOperation[] = [];
-let current: { operation: QueuedOperation; request: number } | undefined;
-let nextRequest = 0;
+const queue = new OperationQueue(message => vscode.postMessage(message));
 
 function enqueue(operation: QueuedOperation): void {
-  const previous = pending.at(-1);
-  if (operation.kind === "edit" && operation.edit.kind === "name" &&
-      previous?.kind === "edit" && previous.edit.kind === "name" && previous.edit.id === operation.edit.id) {
-    pending[pending.length - 1] = operation;
-  } else {
-    pending.push(operation);
-  }
+  queue.enqueue(operation);
   editError = undefined;
   editStatus = undefined;
-  sendNext();
+  queue.sendNext(state?.version);
   renderNotice();
-}
-
-function sendNext(): void {
-  if (current || !state) return;
-  const operation = pending.shift();
-  if (!operation) return;
-  const request = ++nextRequest;
-  current = { operation, request };
-  const version = state.version;
-  if (operation.kind === "edit") {
-    vscode.postMessage({ type: "edit", request, version, edit: operation.edit });
-  } else if (operation.kind === "copyRects") {
-    vscode.postMessage({ type: operation.kind, request, version, ids: operation.ids });
-  } else {
-    vscode.postMessage({ type: operation.kind, request, version });
-  }
-}
-
-function queuedEdits(): Edit[] {
-  return [current?.operation, ...pending].flatMap(operation => operation?.kind === "edit" ? [operation.edit] : []);
 }
 
 function applyState(next: DocumentState): void {
@@ -163,7 +134,7 @@ window.addEventListener("message", event => {
   switch (message.type) {
     case "state":
       applyState(message.state);
-      sendNext();
+      queue.sendNext(state?.version);
       break;
     case "image":
       if (message.imagePath === state?.data?.imagePath) void displayImage(message.image, message.error);
@@ -181,15 +152,10 @@ window.addEventListener("message", event => {
       pasteRectangles();
       break;
     case "result":
-      if (current?.request !== message.request) return;
-      const { operation } = current;
-      current = undefined;
+      const operation = queue.complete(message.request, !!message.error);
+      if (!operation) return;
       if (message.error) {
         editError = message.error;
-        // Skip pending saves when an earlier edit in the queue fails.
-        for (let i = pending.length - 1; i >= 0; i--) {
-          if (pending[i].kind === "save" || pending[i].kind === "saveDefaultStyle") pending.splice(i, 1);
-        }
       } else if (operation.kind === "saveDefaultStyle") {
         editStatus = "新規画像の既定スタイルを VS Code の設定に保存しました。";
       } else if (operation.kind === "copyRects") {
@@ -200,7 +166,7 @@ window.addEventListener("message", event => {
         for (const id of message.selectedIds) setSelection(id, "pair", true);
       }
       applyState(message.state);
-      sendNext();
+      queue.sendNext(state?.version);
       break;
   }
 });
@@ -300,7 +266,7 @@ function renderRowSelection(id: string, controls: RowControls): void {
 
 function renderRows(): void {
   const items = state?.data?.items ?? [];
-  const editingNames = new Set(queuedEdits().flatMap(edit => edit.kind === "name" ? [edit.id] : []));
+  const editingNames = new Set(queue.queuedEdits().flatMap(edit => edit.kind === "name" ? [edit.id] : []));
   const visibleIds = new Set(items.map(item => item.id));
   for (const [id, controls] of rowElements) {
     if (!visibleIds.has(id)) {
@@ -410,7 +376,7 @@ function pendingGeometry(items: AnnotationItem[], edits: Edit[]): AnnotationItem
   return [...draft.values()];
 }
 
-function pendingStyle<T extends Partial<ShapeStyle>>(saved: T, id?: string, edits = queuedEdits()): T {
+function pendingStyle<T extends Partial<ShapeStyle>>(saved: T, id?: string, edits = queue.queuedEdits()): T {
   const style = { ...saved };
   for (const edit of edits) {
     if (edit.kind === "style" && edit.id === id) applyStyleValue(style, edit);
@@ -453,7 +419,7 @@ function renderProperties(): void {
     geometryError.hidden = true;
   }
   geometryTitle.textContent = item ? `${item.number}番の位置とサイズ（px）` : "選択した項目の位置とサイズ（px）";
-  const edits = queuedEdits();
+  const edits = queue.queuedEdits();
   const draft = pendingGeometry(items, edits);
   renderCoordinates(regionFields, draft.map(entry => entry.region));
   renderCoordinates(markerFields, draft.map(entry => entry.marker));
@@ -510,7 +476,7 @@ function applyGeometry(): boolean {
   const data = state?.data;
   if (!data || !hasEditableGeometry() || !geometryForm.reportValidity()) return false;
   const size = data.coordinateSize;
-  const edits = queuedEdits();
+  const edits = queue.queuedEdits();
   const common = pendingStyle(data.style, undefined, edits);
   const region = changedCoordinates(regionFields);
   const marker = changedCoordinates(markerFields);
