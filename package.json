@@ -34,6 +34,8 @@
           "additionalProperties": false,
           "properties": {
             "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "線の色（#RRGGBB）" },
+            "markerFillColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "丸番号の塗りつぶし色（#RRGGBB）。未指定は白" },
+            "markerTextColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "丸番号の文字色（#RRGGBB）。未指定は濃い紺" },
             "lineStyle": { "type": "string", "enum": ["solid", "dashed", "dotted"], "description": "線種" },
             "strokeWidth": { "type": ["number", "null"], "exclusiveMinimum": 0, "description": "線の太さ（px）。null は既定の太さ" },
             "markerDiameter": { "type": ["number", "null"], "exclusiveMinimum": 0, "description": "丸番号の直径（原画像のpx）。null は自動" }

@@ -1,5 +1,5 @@
 import {
-  applyStyleValue, clamp, constrainMarker, constrainRegionPosition, defaultStrokeWidth, effectiveMarkerDiameter,
+  applyStyleValue, clamp, constrainMarker, constrainRegionPosition, defaultMarkerColors, defaultStrokeWidth, effectiveMarkerDiameter,
   isAlignment, isDistributionDirection, isLineStyle, isMarkerAnchor, markerAfterRegionMove, markerRadius, placementBounds, regionBetween, updatedGeometry,
 } from "../annotation";
 import type {
@@ -38,7 +38,6 @@ const zoomOut = element<HTMLButtonElement>("zoom-out");
 const fitButton = element<HTMLButtonElement>("fit");
 const imageStyle = element<HTMLFieldSetElement>("image-style");
 const imageStyleToggle = element<HTMLButtonElement>("image-style-toggle");
-const imageColor = element<HTMLInputElement>("image-color");
 const imageLine = element<HTMLSelectElement>("image-line");
 const imageStrokeWidth = element<HTMLInputElement>("image-stroke-width");
 const imageMarkerDiameter = element<HTMLInputElement>("image-marker-diameter");
@@ -56,11 +55,18 @@ const regionFields = {
   width: element<HTMLInputElement>("region-width"), height: element<HTMLInputElement>("region-height"),
 };
 const markerFields = { x: element<HTMLInputElement>("marker-x"), y: element<HTMLInputElement>("marker-y") };
-const overrideColor = element<HTMLInputElement>("override-color");
-const itemColor = element<HTMLInputElement>("item-color");
 const itemLine = element<HTMLSelectElement>("item-line");
 const itemStrokeWidth = element<HTMLInputElement>("item-stroke-width");
 const itemMarkerDiameter = element<HTMLInputElement>("item-marker-diameter");
+
+const colorStyleFields = [
+  { property: "color", image: element<HTMLInputElement>("image-color"),
+    item: element<HTMLInputElement>("item-color"), override: element<HTMLInputElement>("override-color") },
+  { property: "markerFillColor", image: element<HTMLInputElement>("image-marker-fill"),
+    item: element<HTMLInputElement>("item-marker-fill"), override: element<HTMLInputElement>("override-marker-fill") },
+  { property: "markerTextColor", image: element<HTMLInputElement>("image-marker-text"),
+    item: element<HTMLInputElement>("item-marker-text"), override: element<HTMLInputElement>("override-marker-text") },
+] as const;
 
 const numericStyleFields = [
   { input: imageStrokeWidth, property: "strokeWidth", scope: "image" },
@@ -454,9 +460,13 @@ function renderProperties(): void {
   if (!item || !data) return;
   const style = pendingStyle(data.style, undefined, edits);
   const overrides = pendingStyle(item.style ?? {}, item.id, edits);
-  overrideColor.checked = overrides.color !== undefined;
-  itemColor.disabled = !overrideColor.checked;
-  itemColor.value = overrides.color ?? style.color;
+  const colors = { ...defaultMarkerColors, ...style };
+  for (const field of colorStyleFields) {
+    const value = overrides[field.property];
+    field.override.checked = value !== undefined;
+    field.item.disabled = !field.override.checked;
+    field.item.value = value ?? colors[field.property];
+  }
   itemLine.value = overrides.lineStyle ?? "";
   renderStyleNumber(itemStrokeWidth, overrides.strokeWidth);
   renderStyleNumber(itemMarkerDiameter, overrides.markerDiameter);
@@ -479,7 +489,8 @@ function renderImageStyle(): void {
   const style = state?.data?.style;
   if (!style) return;
   const draft = pendingStyle(style);
-  imageColor.value = draft.color;
+  const colors = { ...defaultMarkerColors, ...draft };
+  for (const field of colorStyleFields) field.image.value = colors[field.property];
   imageLine.value = draft.lineStyle;
   renderStyleNumber(imageStrokeWidth, draft.strokeWidth ?? defaultStrokeWidth);
   renderStyleNumber(imageMarkerDiameter, draft.markerDiameter);
@@ -581,25 +592,27 @@ imageStyleToggle.addEventListener("click", () => {
   imageStyle.hidden = !imageStyle.hidden;
   imageStyleToggle.setAttribute("aria-expanded", String(!imageStyle.hidden));
 });
-imageColor.addEventListener("change", () => enqueue({
-  kind: "edit", edit: { kind: "style", property: "color", value: imageColor.value },
-}));
+for (const { property, image, item, override } of colorStyleFields) {
+  image.addEventListener("change", () => enqueue({
+    kind: "edit", edit: { kind: "style", property, value: image.value },
+  }));
+  override.addEventListener("change", () => {
+    const [selected] = selectedItems();
+    if (!selected) return;
+    item.disabled = !override.checked;
+    enqueue({ kind: "edit", edit: { kind: "style", id: selected.id, property,
+      value: override.checked ? item.value : null } });
+  });
+  item.addEventListener("change", () => {
+    const [selected] = selectedItems();
+    if (selected && override.checked) enqueue({
+      kind: "edit", edit: { kind: "style", id: selected.id, property, value: item.value },
+    });
+  });
+}
 imageLine.addEventListener("change", () => {
   if (isLineStyle(imageLine.value)) enqueue({
     kind: "edit", edit: { kind: "style", property: "lineStyle", value: imageLine.value },
-  });
-});
-overrideColor.addEventListener("change", () => {
-  const [item] = selectedItems();
-  if (!item) return;
-  itemColor.disabled = !overrideColor.checked;
-  enqueue({ kind: "edit", edit: { kind: "style", id: item.id, property: "color",
-    value: overrideColor.checked ? itemColor.value : null } });
-});
-itemColor.addEventListener("change", () => {
-  const [item] = selectedItems();
-  if (item && overrideColor.checked) enqueue({
-    kind: "edit", edit: { kind: "style", id: item.id, property: "color", value: itemColor.value },
   });
 });
 itemLine.addEventListener("change", () => {
@@ -684,7 +697,8 @@ function renderAnnotations(): void {
     if (regionSelected) appendSelectionHighlight(group, "rect", { ...rect });
     const radius = markerRadius(item.number, data.coordinateSize, style.markerDiameter);
     const circle = { cx: marker.x, cy: marker.y, r: radius };
-    const markerShape = svg("circle", { ...circle, ...stroke, class: "marker", "data-drag": "marker" });
+    const markerShape = svg("circle", { ...circle, ...stroke,
+      fill: style.markerFillColor ?? defaultMarkerColors.markerFillColor, class: "marker", "data-drag": "marker" });
     if (editable) markerShape.setAttribute("data-vscode-context", JSON.stringify({
       webviewSection: "annotationMarker", annotationMarker: item.id, preventDefaultContextMenuItems: true,
     }));
@@ -692,6 +706,7 @@ function renderAnnotations(): void {
     if (markerSelected) appendSelectionHighlight(markerGroup, "circle", circle);
     const label = svg("text", {
       x: marker.x, y: marker.y, class: "marker-text",
+      fill: style.markerTextColor ?? defaultMarkerColors.markerTextColor,
       "font-size": radius * Math.min(1.1, 2.5 / String(item.number).length),
     });
     label.textContent = String(item.number);

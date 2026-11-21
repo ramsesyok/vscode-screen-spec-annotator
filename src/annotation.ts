@@ -43,12 +43,15 @@ export interface ShapeStyle {
   lineStyle: LineStyle;
   strokeWidth?: number;
   markerDiameter?: number;
+  markerFillColor?: string;
+  markerTextColor?: string;
 }
 
 export const defaultStrokeWidth = 2;
+export const defaultMarkerColors = { markerFillColor: "#ffffff", markerTextColor: "#0b253d" };
 export type NumericStyleProperty = "strokeWidth" | "markerDiameter";
 export type StyleEdit = { kind: "style"; id?: string } & (
-  | { property: "color"; value: string | null }
+  | { property: "color" | "markerFillColor" | "markerTextColor"; value: string | null }
   | { property: "lineStyle"; value: LineStyle | null }
   | { property: NumericStyleProperty; value: number | null }
 );
@@ -138,6 +141,11 @@ function isColor(value: unknown): value is string {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
 }
 
+function hasValidMarkerColors(style: Record<string, unknown>): boolean {
+  return (style.markerFillColor === undefined || isColor(style.markerFillColor)) &&
+    (style.markerTextColor === undefined || isColor(style.markerTextColor));
+}
+
 export function isLineStyle(value: unknown): value is LineStyle {
   return value === "solid" || value === "dashed" || value === "dotted";
 }
@@ -184,7 +192,7 @@ function isItem(value: unknown, size: Size): value is AnnotationItem {
     (value.style === undefined || (isRecord(value.style) &&
       (value.style.color === undefined || isColor(value.style.color)) &&
       (value.style.lineStyle === undefined || isLineStyle(value.style.lineStyle)) &&
-      isOptionalSizeStyle(value.style, size)));
+      hasValidMarkerColors(value.style) && isOptionalSizeStyle(value.style, size)));
 }
 
 export function parseAnnotation(text: string): AnnotationDocument {
@@ -196,7 +204,8 @@ export function parseAnnotation(text: string): AnnotationDocument {
   if (!isRelativeImagePath(imagePath) || !isIdentity(confirmedImage) ||
       !isSize(coordinateSize) || typeof coordinateReviewPending !== "boolean" ||
       !isInteger(highestIssuedNumber, 0) || !isRecord(style) ||
-      !isColor(style.color) || !isLineStyle(style.lineStyle) || !isOptionalSizeStyle(style, coordinateSize) ||
+      !isColor(style.color) || !isLineStyle(style.lineStyle) || !hasValidMarkerColors(style) ||
+      !isOptionalSizeStyle(style, coordinateSize) ||
       !Array.isArray(items) || !items.every((item): item is AnnotationItem => isItem(item, coordinateSize))) {
     throw new Error("原画像の情報、座標、スタイル、項目IDの形式を確認してください。");
   }
@@ -220,6 +229,8 @@ export function newAnnotation(imagePath: string, image: ImageIdentity, defaults?
     lineStyle: isLineStyle(settings.lineStyle) ? settings.lineStyle : "solid",
   };
   if (isPositiveNumber(settings.strokeWidth)) style.strokeWidth = settings.strokeWidth;
+  if (isColor(settings.markerFillColor)) style.markerFillColor = settings.markerFillColor;
+  if (isColor(settings.markerTextColor)) style.markerTextColor = settings.markerTextColor;
   if (isPositiveNumber(settings.markerDiameter)) {
     style.markerDiameter = Math.min(settings.markerDiameter, image.width, image.height);
   }
@@ -261,7 +272,9 @@ export function isEdit(value: unknown): value is Edit {
       return value.value === null || isPositiveNumber(value.value);
     }
     if (value.value === null && value.id === undefined) return false;
-    if (value.property === "color") return value.value === null || isColor(value.value);
+    if (value.property === "color" || value.property === "markerFillColor" || value.property === "markerTextColor") {
+      return value.value === null || isColor(value.value);
+    }
     if (value.property === "lineStyle") return value.value === null || isLineStyle(value.value);
     return false;
   }

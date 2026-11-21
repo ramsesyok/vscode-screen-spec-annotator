@@ -318,6 +318,8 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
       <fieldset id="image-style" class="properties property-grid" hidden disabled>
         <legend>画像全体の共通スタイル</legend>
         <label>共通の色 <input id="image-color" type="color"></label>
+        <label>丸番号の塗りつぶし色 <input id="image-marker-fill" type="color"></label>
+        <label>丸番号の文字色 <input id="image-marker-text" type="color"></label>
         <label>共通の線種
           <select id="image-line" aria-label="共通の線種">
             <option value="solid">実線</option>
@@ -348,6 +350,10 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
           <legend>項目のスタイル</legend>
           <label class="inline-control"><input id="override-color" type="checkbox"> 色を個別指定</label>
           <label>項目の色 <input id="item-color" type="color"></label>
+          <label class="inline-control"><input id="override-marker-fill" type="checkbox"> 丸番号の塗りつぶし色を個別指定</label>
+          <label>丸番号の塗りつぶし色 <input id="item-marker-fill" type="color"></label>
+          <label class="inline-control"><input id="override-marker-text" type="checkbox"> 丸番号の文字色を個別指定</label>
+          <label>丸番号の文字色 <input id="item-marker-text" type="color"></label>
           <label>項目の線種
             <select id="item-line" aria-label="項目の線種">
               <option value="">共通設定を使う</option>

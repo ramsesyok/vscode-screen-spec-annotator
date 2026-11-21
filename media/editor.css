@@ -97,8 +97,8 @@ button:disabled { opacity: .55; cursor: default; }
 .selection-halo { stroke: #fff; stroke-width: 5; }
 .selection-outline { stroke: #1463d6; stroke-width: 2.5; stroke-dasharray: 6 3; }
 rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
-.marker { fill: #fff; cursor: move; }
-.marker-text { fill: #0b253d; text-anchor: middle; dominant-baseline: central; font-weight: 700; pointer-events: none; }
+.marker { cursor: move; }
+.marker-text { text-anchor: middle; dominant-baseline: central; font-weight: 700; pointer-events: none; }
 .handle { fill: #fff; stroke: #097ee3; stroke-width: 2; cursor: crosshair; }
 .region.preview { stroke-dasharray: 4 3; pointer-events: none; }
 .selection-box {
