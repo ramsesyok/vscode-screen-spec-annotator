@@ -242,6 +242,22 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
         ${iconButton("fit_screen", "全体表示", 'id="fit"')}
         <output id="zoom" aria-label="表示倍率"></output>
         ${iconButton("delete_outline", "選択項目を削除", 'id="remove"')}
+        <fieldset id="alignment" aria-label="位置揃えと整列" disabled>
+          <div class="placement-buttons">
+            <div class="alignment-buttons">
+              ${iconButton("align_horizontal_left", "左揃え", 'data-align="left"')}
+              ${iconButton("align_horizontal_center", "左右中央", 'data-align="center-x"')}
+              ${iconButton("align_horizontal_right", "右揃え", 'data-align="right"')}
+              ${iconButton("align_vertical_top", "上揃え", 'data-align="top"')}
+              ${iconButton("align_vertical_center", "上下中央", 'data-align="center-y"')}
+              ${iconButton("align_vertical_bottom", "下揃え", 'data-align="bottom"')}
+            </div>
+            <div class="distribution-buttons">
+              ${iconButton("horizontal_distribute", "左右に整列", 'data-distribute="horizontal"', "button", "左右に整列（3つ以上の対象）")}
+              ${iconButton("vertical_distribute", "上下に整列", 'data-distribute="vertical"', "button", "上下に整列（3つ以上の対象）")}
+            </div>
+          </div>
+        </fieldset>
       </div>
       <div id="notice" role="status" hidden></div>
       <div id="json-actions" hidden>${iconButton("data_object", "JSONエディターで開く", 'id="json"')}</div>
@@ -272,21 +288,6 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
         ${iconButton("save", "新規画像の既定スタイルにする", 'id="save-default-style"')}
       </fieldset>
       <p id="selection-count" role="status">図形を選択すると編集できます。</p>
-      <fieldset id="alignment" class="properties" aria-label="位置揃えと整列" disabled>
-        <legend>位置揃え・整列</legend>
-        <div class="alignment-buttons">
-          ${iconButton("align_horizontal_left", "左揃え", 'data-align="left"')}
-          ${iconButton("align_horizontal_center", "左右中央", 'data-align="center-x"')}
-          ${iconButton("align_horizontal_right", "右揃え", 'data-align="right"')}
-          ${iconButton("align_vertical_top", "上揃え", 'data-align="top"')}
-          ${iconButton("align_vertical_center", "上下中央", 'data-align="center-y"')}
-          ${iconButton("align_vertical_bottom", "下揃え", 'data-align="bottom"')}
-        </div>
-        <div class="distribution-buttons">
-          ${iconButton("horizontal_distribute", "左右に整列", 'data-distribute="horizontal"', "button", "左右に整列（3つ以上の対象）")}
-          ${iconButton("vertical_distribute", "上下に整列", 'data-distribute="vertical"', "button", "上下に整列（3つ以上の対象）")}
-        </div>
-      </fieldset>
       <div id="item-properties" hidden>
         <form id="geometry">
           <fieldset id="geometry-fields" class="properties property-grid">
