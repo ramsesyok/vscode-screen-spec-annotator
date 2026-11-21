@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as vscode from "vscode";
@@ -10,6 +10,14 @@ import type { DocumentRequest, HostMessage } from "../src/protocol";
 // VS Code loads run() through --extensionTestsPath.
 export async function run(): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "screen-spec-host-"));
+  try {
+    await checkDocumentOperations(directory);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function checkDocumentOperations(directory: string): Promise<void> {
   const data = newAnnotation("original.png", { width: 200, height: 100, sha256: "a".repeat(64) });
   applyAnnotationEdit(data, { kind: "add", region: { x: 10, y: 10, width: 20, height: 20 } }, () => "source");
   const operations = new DocumentOperations();

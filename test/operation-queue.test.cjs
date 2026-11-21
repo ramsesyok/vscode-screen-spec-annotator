@@ -4,6 +4,16 @@ const { OperationQueue } = require("../src/webview/operation-queue.ts");
 
 const name = value => ({ kind: "edit", edit: { kind: "name", id: "item01", name: value } });
 
+test("coalesced names retain the original comparison value", () => {
+  const sent = [];
+  const queue = new OperationQueue(message => sent.push(message));
+  for (const [previousName, value] of [["", "A"], ["A", "AB"], ["AB", "ABC"]]) {
+    queue.enqueue({ kind: "edit", edit: { ...name(value).edit, previousName } });
+  }
+  queue.sendNext(1);
+  assert.deepEqual(sent[0].edit, { ...name("ABC").edit, previousName: "" });
+});
+
 test("only adjacent waiting names coalesce, and state notifications cannot acknowledge a request", () => {
   const sent = [];
   const queue = new OperationQueue(message => sent.push(message));
@@ -34,7 +44,8 @@ test("a failed request drops queued saves while retaining subsequent edits and c
   const queue = new OperationQueue(message => sent.push(message));
   queue.enqueue(name("failed"));
   queue.sendNext(3);
-  for (const operation of [{ kind: "save" }, name("later"), { kind: "saveDefaultStyle" },
+  const otherName = { kind: "edit", edit: { kind: "name", id: "item02", name: "later" } };
+  for (const operation of [{ kind: "save" }, name("stale"), otherName, { kind: "saveDefaultStyle" },
     { kind: "copyRects", ids: ["item01"] }, { kind: "pasteRects" }]) queue.enqueue(operation);
   queue.complete(1, true);
   for (const request of [2, 3, 4]) {
@@ -43,6 +54,7 @@ test("a failed request drops queued saves while retaining subsequent edits and c
   }
   queue.sendNext(4);
   assert.deepEqual(sent.map(m => m.type), ["edit", "edit", "copyRects", "pasteRects"]);
+  assert.equal(sent[1].edit.id, "item02");
   assert.deepEqual(sent[2].ids, ["item01"]);
   assert.deepEqual(queue.queuedEdits(), []);
 });

@@ -50,7 +50,7 @@ export interface ShapeStyle {
 export const defaultStrokeWidth = 2;
 export const defaultMarkerColors = { markerFillColor: "#ffffff", markerTextColor: "#0b253d" };
 export type NumericStyleProperty = "strokeWidth" | "markerDiameter";
-export type StyleEdit = { kind: "style"; id?: string } & (
+export type StyleEdit = { kind: "style"; id?: string; imageBasis?: string } & (
   | { property: "color" | "markerFillColor" | "markerTextColor"; value: string | null }
   | { property: "lineStyle"; value: LineStyle | null }
   | { property: NumericStyleProperty; value: number | null }
@@ -85,16 +85,16 @@ type PlacementEdit = { subjects: PlacementSubject[] } & (
 );
 
 export type Edit =
-  | { kind: "add"; region: Region }
-  | { kind: "region"; id: string; region: Region }
-  | { kind: "moveRegion"; id: string; position: Point }
-  | { kind: "marker"; id: string; marker: Point }
+  | { kind: "add"; region: Region; origin?: string }
+  | { kind: "region"; id: string; region: Region; origin?: string }
+  | { kind: "moveRegion"; id: string; position: Point; origin?: string }
+  | { kind: "marker"; id: string; marker: Point; origin?: string }
   | { kind: "markerPreset"; ids: string[]; anchor: MarkerAnchor }
   | { kind: "geometry"; changes: GeometryChange[] }
   | PlacementEdit
   | StyleEdit
-  | { kind: "name"; id: string; name: string }
-  | { kind: "remove"; ids: string[] };
+  | { kind: "name"; id: string; name: string; previousName?: string }
+  | { kind: "remove"; ids: string[]; imageBasis?: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -248,6 +248,8 @@ export function newAnnotation(imagePath: string, image: ImageIdentity, defaults?
 
 export function isEdit(value: unknown): value is Edit {
   if (!isRecord(value)) return false;
+  if (value.origin !== undefined && typeof value.origin !== "string") return false;
+  if (value.imageBasis !== undefined && typeof value.imageBasis !== "string") return false;
   if (value.kind === "add") return isRegion(value.region);
   if (value.kind === "remove" || value.kind === "markerPreset") {
     return isAnnotationIds(value.ids) &&
@@ -283,7 +285,8 @@ export function isEdit(value: unknown): value is Edit {
     case "region": return isRegion(value.region);
     case "moveRegion": return isPoint(value.position);
     case "marker": return isPoint(value.marker);
-    case "name": return typeof value.name === "string";
+    case "name": return typeof value.name === "string" &&
+      (value.previousName === undefined || typeof value.previousName === "string");
     default: return false;
   }
 }
@@ -543,6 +546,18 @@ export function pasteAnnotations(data: AnnotationDocument, copied: readonly Anno
   return items.map(item => item.id);
 }
 
+// Snapshot the image basis and, for a drag, the geometry used to compute its destination.
+export function geometryBasis(data: AnnotationDocument, item?: AnnotationItem): string {
+  const { width, height } = data.coordinateSize;
+  const basis = [data.imagePath, data.confirmedImage.sha256, width, height];
+  if (item) {
+    const { x, y, width, height } = item.region;
+    basis.push(item.id, x, y, width, height, item.marker.x, item.marker.y,
+      markerRadius(item.number, data.coordinateSize, effectiveMarkerDiameter(data.style, item)));
+  }
+  return JSON.stringify(basis);
+}
+
 export function applyAnnotationEdit(
   data: AnnotationDocument,
   edit: Edit,
@@ -550,6 +565,15 @@ export function applyAnnotationEdit(
   defaultMarkerAnchor: MarkerAnchor = "top-right",
 ): string | undefined {
   const size = data.coordinateSize;
+  if ("imageBasis" in edit && edit.imageBasis !== undefined && edit.imageBasis !== geometryBasis(data)) {
+    throw new Error("原画像の基準が更新されました。最新の画像を確認してください。");
+  }
+  if ("origin" in edit && edit.origin !== undefined) {
+    const target = edit.kind === "add" ? undefined : data.items.find(item => item.id === edit.id);
+    if (edit.origin !== geometryBasis(data, target)) {
+      throw new Error("ドラッグ中に対象の図形または原画像が更新されました。最新の位置から操作し直してください。");
+    }
+  }
   if ((edit.kind === "add" || edit.kind === "region") && !regionFits(edit.region, size)) {
     throw new Error("矩形を画像の内側に収めてください。");
   }
@@ -615,6 +639,9 @@ export function applyAnnotationEdit(
       item.marker = constrainMarker(edit.marker, item.number, size, effectiveMarkerDiameter(data.style, item));
       break;
     case "name":
+      if (edit.previousName !== undefined && edit.previousName !== item.name) {
+        throw new Error("名称が更新されました。最新の名称を確認してください。");
+      }
       item.name = edit.name;
       break;
   }

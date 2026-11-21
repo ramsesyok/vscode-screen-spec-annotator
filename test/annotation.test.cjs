@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { applyAnnotationEdit, newAnnotation, parseAnnotation, pasteAnnotations } = require("../src/annotation.ts");
+const { applyAnnotationEdit, geometryBasis, newAnnotation, parseAnnotation, pasteAnnotations } = require("../src/annotation.ts");
 
 function documentWithItems() {
   const data = newAnnotation("../shared/image.png", { width: 120, height: 80, sha256: "a".repeat(64) });
@@ -9,6 +9,44 @@ function documentWithItems() {
   }
   return data;
 }
+
+test("queued drags preserve concurrent geometry and image changes but allow unrelated edits", () => {
+  const data = documentWithItems();
+  const item = data.items[0];
+  const move = { kind: "moveRegion", id: item.id, position: { x: 12, y: 10 }, origin: geometryBasis(data, item) };
+  applyAnnotationEdit(data, { kind: "name", id: item.id, name: "renamed" });
+  applyAnnotationEdit(data, { kind: "marker", id: data.items[1].id, marker: { x: 55, y: 20 } });
+  applyAnnotationEdit(data, move);
+  assert.equal(item.region.x, 12);
+  const afterMove = structuredClone(data);
+  assert.throws(() => applyAnnotationEdit(data, move), /ドラッグ/);
+  assert.deepEqual(data, afterMove);
+  const add = { kind: "add", region: item.region, origin: geometryBasis(data) };
+  data.imagePath = "replacement.png";
+  assert.throws(() => applyAnnotationEdit(data, add), /ドラッグ/);
+});
+
+test("a waiting name cannot overwrite an intervening rename", () => {
+  const data = documentWithItems();
+  data.items[0].name = "external";
+  const edit = { kind: "name", id: data.items[0].id, previousName: "", name: "draft" };
+  assert.throws(() => applyAnnotationEdit(data, edit), /名称/);
+  assert.equal(data.items[0].name, "external");
+  applyAnnotationEdit(data, { ...edit, previousName: "external" });
+  assert.equal(data.items[0].name, "draft");
+});
+
+test("queued diameter and delete operations stop when the image basis changes", () => {
+  const data = documentWithItems();
+  const imageBasis = geometryBasis(data);
+  data.coordinateSize.width += 1;
+  const before = structuredClone(data);
+  for (const edit of [
+    { kind: "style", property: "markerDiameter", value: 40, imageBasis },
+    { kind: "remove", ids: [data.items[0].id], imageBasis },
+  ]) assert.throws(() => applyAnnotationEdit(data, edit), /原画像/);
+  assert.deepEqual(data, before);
+});
 
 test("v2 preserves row order, optional styles, column values and extension fields after a name edit", () => {
   const data = documentWithItems();

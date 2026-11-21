@@ -18,7 +18,8 @@ export class OperationQueue {
     const previous = this.pending.at(-1);
     if (operation.kind === "edit" && operation.edit.kind === "name" &&
         previous?.kind === "edit" && previous.edit.kind === "name" && previous.edit.id === operation.edit.id) {
-      this.pending[this.pending.length - 1] = operation;
+      this.pending[this.pending.length - 1] = previous.edit.previousName === undefined ? operation :
+        { kind: "edit", edit: { ...operation.edit, previousName: previous.edit.previousName } };
     } else {
       this.pending.push(operation);
     }
@@ -44,8 +45,13 @@ export class OperationQueue {
     const { operation } = this.current;
     this.current = undefined;
     if (failed) {
+      const failedName = operation.kind === "edit" && operation.edit.kind === "name" ? operation.edit.id : undefined;
       for (let i = this.pending.length - 1; i >= 0; i--) {
-        if (this.pending[i].kind === "save" || this.pending[i].kind === "saveDefaultStyle") this.pending.splice(i, 1);
+        const waiting = this.pending[i];
+        if (waiting.kind === "save" || waiting.kind === "saveDefaultStyle" ||
+            (waiting.kind === "edit" && waiting.edit.kind === "name" && waiting.edit.id === failedName)) {
+          this.pending.splice(i, 1);
+        }
       }
     }
     return operation;
