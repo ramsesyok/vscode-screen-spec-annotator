@@ -231,97 +231,101 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
 </head>
 <body>
 <main id="editor" data-vscode-context='{"annotationPanel":"${panelToken}"}'>
-  <section id="image-panel" aria-label="画像と注釈">
-    <div class="toolbar" role="group" aria-label="画像操作">
-      ${iconButton("highlight_alt", "図形を選択", 'id="select" aria-pressed="true"')}
-      ${iconButton("add_box", "矩形を追加", 'id="draw" aria-pressed="false"')}
-      ${iconButton("pan_tool", "パン", 'id="pan" aria-pressed="false"')}
-      ${iconButton("zoom_out", "縮小", 'id="zoom-out"')}
-      ${iconButton("zoom_in", "拡大", 'id="zoom-in"')}
-      ${iconButton("fit_screen", "全体表示", 'id="fit"')}
-      <output id="zoom" aria-label="表示倍率"></output>
-      ${iconButton("delete_outline", "選択項目を削除", 'id="remove"')}
-      ${iconButton("tune", "共通スタイル", 'id="image-style-toggle" aria-controls="image-style" aria-expanded="false"')}
-    </div>
-    <fieldset id="image-style" class="properties" hidden disabled>
-      <legend>画像全体の共通スタイル</legend>
-      <label>共通の色 <input id="image-color" type="color"></label>
-      <label>共通の線種
-        <select id="image-line" aria-label="共通の線種">
-          <option value="solid">実線</option>
-          <option value="dashed">破線</option>
-          <option value="dotted">点線</option>
-        </select>
-      </label>
-      <label>線の太さ（px） <input id="image-stroke-width" type="number" step="any" aria-label="共通の線の太さ"></label>
-      <label>丸番号の直径（px） <input id="image-marker-diameter" type="number" step="any" aria-label="共通の丸番号の直径" placeholder="自動"></label>
-      ${iconButton("save", "新規画像の既定スタイルにする", 'id="save-default-style"')}
-    </fieldset>
-    <div id="notice" role="status" hidden></div>
-    <div id="json-actions" hidden>${iconButton("data_object", "JSONエディターで開く", 'id="json"')}</div>
-    <div id="viewport" aria-label="原画像上の矩形と丸番号" tabindex="0">
-      <div id="surface" hidden>
-        <canvas id="original"></canvas>
-        <svg id="annotations" aria-label="注釈の位置"></svg>
+  <div id="work-area">
+    <section id="image-panel" aria-label="画像と注釈">
+      <div class="toolbar" role="group" aria-label="画像操作">
+        ${iconButton("highlight_alt", "図形を選択", 'id="select" aria-pressed="true"')}
+        ${iconButton("add_box", "矩形を追加", 'id="draw" aria-pressed="false"')}
+        ${iconButton("pan_tool", "パン", 'id="pan" aria-pressed="false"')}
+        ${iconButton("zoom_out", "縮小", 'id="zoom-out"')}
+        ${iconButton("zoom_in", "拡大", 'id="zoom-in"')}
+        ${iconButton("fit_screen", "全体表示", 'id="fit"')}
+        <output id="zoom" aria-label="表示倍率"></output>
+        ${iconButton("delete_outline", "選択項目を削除", 'id="remove"')}
       </div>
-    </div>
-  </section>
-  <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="画像と表の高さを調整" aria-valuemin="20" aria-valuemax="80" aria-valuenow="65" tabindex="0"></div>
-  <section id="table-panel" aria-label="対応表">
-    <div id="alignment" class="properties" role="group" aria-label="位置揃えと整列" hidden>
-      <span id="selection-count"></span>
-      <label>対象
-        <select id="placement-target" aria-label="配置の対象">
-          <option value="selected">選択した図形</option>
-          <option value="region">矩形基準</option>
-          <option value="marker">丸番号のみ</option>
-          <option value="pair">矩形と丸番号の組</option>
-        </select>
-      </label>
-      ${iconButton("align_horizontal_left", "左揃え", 'data-align="left"')}
-      ${iconButton("align_horizontal_center", "左右中央", 'data-align="center-x"')}
-      ${iconButton("align_horizontal_right", "右揃え", 'data-align="right"')}
-      ${iconButton("align_vertical_top", "上揃え", 'data-align="top"')}
-      ${iconButton("align_vertical_center", "上下中央", 'data-align="center-y"')}
-      ${iconButton("align_vertical_bottom", "下揃え", 'data-align="bottom"')}
-      ${iconButton("horizontal_distribute", "左右に整列", 'data-distribute="horizontal"', "button", "左右に整列（3つ以上の対象）")}
-      ${iconButton("vertical_distribute", "上下に整列", 'data-distribute="vertical"', "button", "上下に整列（3つ以上の対象）")}
-    </div>
-    <div id="item-properties" hidden>
-      <form id="geometry">
-        <fieldset id="geometry-fields" class="properties">
-          <legend id="geometry-title">位置とサイズ（px）</legend>
-          <label>矩形 X <input id="region-x" type="number" step="any"></label>
-          <label>矩形 Y <input id="region-y" type="number" step="any"></label>
-          <label>幅 <input id="region-width" type="number" step="any"></label>
-          <label>高さ <input id="region-height" type="number" step="any"></label>
-          <label>丸番号 X <input id="marker-x" type="number" step="any"></label>
-          <label>丸番号 Y <input id="marker-y" type="number" step="any"></label>
-          ${iconButton("check", "座標を適用", "", "submit")}
-        </fieldset>
-        <div id="geometry-error" role="status" hidden></div>
-      </form>
-      <fieldset id="item-style" class="properties">
-        <legend>項目のスタイル</legend>
-        <label><input id="override-color" type="checkbox"> 色を個別指定</label>
-        <label>項目の色 <input id="item-color" type="color"></label>
-        <label>項目の線種
-          <select id="item-line" aria-label="項目の線種">
-            <option value="">共通設定を使う</option>
+      <div id="notice" role="status" hidden></div>
+      <div id="json-actions" hidden>${iconButton("data_object", "JSONエディターで開く", 'id="json"')}</div>
+      <div id="viewport" aria-label="原画像上の矩形と丸番号" tabindex="0">
+        <div id="surface" hidden>
+          <canvas id="original"></canvas>
+          <svg id="annotations" aria-label="注釈の位置"></svg>
+        </div>
+      </div>
+    </section>
+    <aside id="properties-panel" aria-labelledby="properties-title">
+      <div class="panel-heading">
+        <h2 id="properties-title">図形の編集</h2>
+        ${iconButton("tune", "共通スタイル", 'id="image-style-toggle" aria-controls="image-style" aria-expanded="false"')}
+      </div>
+      <fieldset id="image-style" class="properties property-grid" hidden disabled>
+        <legend>画像全体の共通スタイル</legend>
+        <label>共通の色 <input id="image-color" type="color"></label>
+        <label>共通の線種
+          <select id="image-line" aria-label="共通の線種">
             <option value="solid">実線</option>
             <option value="dashed">破線</option>
             <option value="dotted">点線</option>
           </select>
         </label>
-        <label>線の太さ（px） <input id="item-stroke-width" type="number" step="any" aria-label="項目の線の太さ" placeholder="共通"></label>
-        <label>丸番号の直径（px） <input id="item-marker-diameter" type="number" step="any" aria-label="項目の丸番号の直径" placeholder="共通"></label>
+        <label>線の太さ（px） <input id="image-stroke-width" type="number" step="any" aria-label="共通の線の太さ"></label>
+        <label>丸番号の直径（px） <input id="image-marker-diameter" type="number" step="any" aria-label="共通の丸番号の直径" placeholder="自動"></label>
+        ${iconButton("save", "新規画像の既定スタイルにする", 'id="save-default-style"')}
       </fieldset>
-    </div>
+      <p id="selection-count" role="status">図形を選択すると編集できます。</p>
+      <fieldset id="alignment" class="properties" aria-label="位置揃えと整列" disabled>
+        <legend>位置揃え・整列</legend>
+        <div class="alignment-buttons">
+          ${iconButton("align_horizontal_left", "左揃え", 'data-align="left"')}
+          ${iconButton("align_horizontal_center", "左右中央", 'data-align="center-x"')}
+          ${iconButton("align_horizontal_right", "右揃え", 'data-align="right"')}
+          ${iconButton("align_vertical_top", "上揃え", 'data-align="top"')}
+          ${iconButton("align_vertical_center", "上下中央", 'data-align="center-y"')}
+          ${iconButton("align_vertical_bottom", "下揃え", 'data-align="bottom"')}
+        </div>
+        <div class="distribution-buttons">
+          ${iconButton("horizontal_distribute", "左右に整列", 'data-distribute="horizontal"', "button", "左右に整列（3つ以上の対象）")}
+          ${iconButton("vertical_distribute", "上下に整列", 'data-distribute="vertical"', "button", "上下に整列（3つ以上の対象）")}
+        </div>
+      </fieldset>
+      <div id="item-properties" hidden>
+        <form id="geometry">
+          <fieldset id="geometry-fields" class="properties property-grid">
+            <legend id="geometry-title">位置とサイズ（px）</legend>
+            <label>矩形 X <input id="region-x" type="number" step="any"></label>
+            <label>矩形 Y <input id="region-y" type="number" step="any"></label>
+            <label>幅 <input id="region-width" type="number" step="any"></label>
+            <label>高さ <input id="region-height" type="number" step="any"></label>
+            <label>丸番号 X <input id="marker-x" type="number" step="any"></label>
+            <label>丸番号 Y <input id="marker-y" type="number" step="any"></label>
+            ${iconButton("check", "座標を適用", "", "submit")}
+          </fieldset>
+          <div id="geometry-error" role="status" hidden></div>
+        </form>
+        <fieldset id="item-style" class="properties property-grid">
+          <legend>項目のスタイル</legend>
+          <label class="inline-control"><input id="override-color" type="checkbox"> 色を個別指定</label>
+          <label>項目の色 <input id="item-color" type="color"></label>
+          <label>項目の線種
+            <select id="item-line" aria-label="項目の線種">
+              <option value="">共通設定を使う</option>
+              <option value="solid">実線</option>
+              <option value="dashed">破線</option>
+              <option value="dotted">点線</option>
+            </select>
+          </label>
+          <label>線の太さ（px） <input id="item-stroke-width" type="number" step="any" aria-label="項目の線の太さ" placeholder="共通"></label>
+          <label>丸番号の直径（px） <input id="item-marker-diameter" type="number" step="any" aria-label="項目の丸番号の直径" placeholder="共通"></label>
+        </fieldset>
+      </div>
+    </aside>
+  </div>
+  <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="画像と表の高さを調整" aria-valuemin="20" aria-valuemax="80" aria-valuenow="65" tabindex="0"></div>
+  <section id="table-panel" aria-label="対応表">
     <table>
       <thead><tr><th scope="col">選択</th><th scope="col">番号</th><th scope="col">名称</th></tr></thead>
       <tbody id="rows"></tbody>
+      <tfoot id="empty"><tr><td colspan="3">「矩形を追加」を選び、画像上をドラッグします。</td></tr></tfoot>
     </table>
-    <p id="empty">画像上をドラッグして矩形を追加できます。</p>
   </section>
 </main>
 <script nonce="${nonce}" src="${script}"></script>

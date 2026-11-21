@@ -18,8 +18,7 @@ export type LineStyle = "solid" | "dashed" | "dotted";
 export type Alignment = "left" | "center-x" | "right" | "top" | "center-y" | "bottom";
 export type DistributionDirection = "horizontal" | "vertical";
 export type ShapePart = "region" | "marker";
-export type PlacementTarget = ShapePart | "pair";
-export type PlacementSubject = { id: string; part: PlacementTarget };
+export type PlacementSubject = { id: string; part: ShapePart };
 export type GeometryChange = { id: string; region?: Partial<Region>; marker?: Partial<Point> };
 
 export const markerAnchors = {
@@ -152,12 +151,8 @@ export function isDistributionDirection(value: unknown): value is DistributionDi
   return value === "horizontal" || value === "vertical";
 }
 
-export function isPlacementTarget(value: unknown): value is PlacementTarget {
-  return value === "region" || value === "marker" || value === "pair";
-}
-
 function isPlacementSubject(value: unknown): value is PlacementSubject {
-  return isRecord(value) && isItemId(value.id) && isPlacementTarget(value.part);
+  return isRecord(value) && isItemId(value.id) && (value.part === "region" || value.part === "marker");
 }
 
 function isCoordinatePatch(value: unknown, keys: readonly string[]): boolean {
@@ -257,8 +252,6 @@ export function isEdit(value: unknown): value is Edit {
         new Set(value.subjects.map(({ id }) => id)).size !== value.subjects.length) {
       return false;
     }
-    if (value.subjects.some(subject => subject.part === "pair") &&
-        !value.subjects.every(subject => subject.part === "pair")) return false;
     return value.kind === "align"
       ? value.subjects.length >= 2 && isAlignment(value.alignment)
       : value.subjects.length >= 3 && isDistributionDirection(value.direction);
@@ -332,7 +325,7 @@ function markerFits(point: Point, number: number, size: Size, diameter?: number)
     Math.abs(constrained.x - point.x) < 1e-7 && Math.abs(constrained.y - point.y) < 1e-7;
 }
 
-export function placementBounds(item: AnnotationItem, target: PlacementTarget, size: Size, style: ShapeStyle): Region {
+export function placementBounds(item: AnnotationItem, target: ShapePart | "pair", size: Size, style: ShapeStyle): Region {
   if (target === "region") return item.region;
   const radius = markerRadius(item.number, size, effectiveMarkerDiameter(style, item));
   const circle = {
@@ -456,11 +449,9 @@ function arrangeItems(items: Map<string, AnnotationItem>, edit: PlacementEdit, s
         movement[axis] + movement[span] + offset > length + 1e-7)) {
       throw new Error("両端を固定して等間隔にすると図形が画像外に出ます。丸番号や両端の位置を調整してください。");
     }
-    return {
-      id: item.id,
-      region: part === "marker" ? undefined : { [axis]: part === "region" ? position : item.region[axis] + offset },
-      marker: part === "marker" ? { [axis]: item.marker[axis] + offset } : undefined,
-    };
+    return part === "region"
+      ? { id: item.id, region: { [axis]: position } }
+      : { id: item.id, marker: { [axis]: item.marker[axis] + offset } };
   });
   applyGeometryChanges(items, changes, size, style);
 }

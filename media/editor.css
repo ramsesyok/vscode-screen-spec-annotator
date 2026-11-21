@@ -48,7 +48,12 @@ button:disabled { opacity: .55; cursor: default; }
   display: grid;
   grid-template-rows: minmax(0, var(--image-height)) 7px minmax(0, 1fr);
 }
-#image-panel { min-height: 0; display: flex; flex-direction: column; }
+#work-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(9rem, 38%, 18rem);
+  min-height: 0;
+}
+#image-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .toolbar, #notice, #json-actions { padding: 7px 10px; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 #zoom { min-width: 4ch; text-align: center; }
@@ -97,31 +102,61 @@ rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
 }
 #splitter:hover, #splitter:focus-visible { background: var(--vscode-focusBorder); }
 #table-panel { min-height: 0; overflow: auto; padding: 8px 10px; }
-.properties {
+#properties-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border-inline-start: 1px solid var(--vscode-panel-border, #777);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  font-size: var(--vscode-font-size, 13px);
+}
+.panel-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
-  margin: 0 0 6px;
-  padding: 5px 9px;
+  justify-content: space-between;
+  gap: 4px 8px;
 }
-fieldset.properties { min-inline-size: 0; border: 1px solid var(--vscode-panel-border, #777); }
-#image-style { margin-inline: 10px; }
-.properties label { display: inline-flex; align-items: center; gap: 5px; }
+.panel-heading h2 { margin: 0; font-size: 1em; font-weight: 600; }
+#selection-count { margin: 4px 0 8px; color: var(--vscode-descriptionForeground); }
+.properties {
+  min-inline-size: 0;
+  margin: 0 0 8px;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--vscode-panel-border, #777);
+}
+.properties legend { max-inline-size: 100%; }
+.alignment-buttons, .distribution-buttons, .property-grid {
+  display: grid;
+  gap: 6px;
+}
+.alignment-buttons { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.distribution-buttons, .property-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.distribution-buttons {
+  margin-block-start: 6px;
+  padding-block-start: 6px;
+  border-block-start: 1px solid var(--vscode-panel-border, #777);
+}
+.alignment-buttons .icon-button, .distribution-buttons .icon-button { min-width: 0; }
+.property-grid label { display: grid; gap: 3px; }
+.property-grid label.inline-control { grid-column: 1 / -1; display: flex; align-items: center; }
+.property-grid > .icon-button { grid-column: 2; justify-self: end; }
 .properties input[type="number"], .properties select {
   box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   min-height: 28px;
   line-height: 1.4;
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
 }
-.properties input[type="number"] { width: 7.5ch; }
 .properties input[type="color"] { width: 2.8em; min-height: 28px; }
-#geometry-error { margin: 4px 9px; color: var(--vscode-errorForeground); }
+#geometry-error { margin: 0 0 8px; color: var(--vscode-errorForeground); }
 table { border-collapse: collapse; width: 100%; }
 th, td { border-bottom: 1px solid var(--vscode-panel-border); padding: 5px; text-align: left; }
-th:nth-child(-n+2) { width: 5ch; }
+th:nth-child(-n+2) { width: 5ch; white-space: nowrap; }
 tr.selected { background: var(--vscode-list-inactiveSelectionBackground); }
 textarea {
   display: block;
@@ -136,4 +171,4 @@ textarea {
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
 }
-#empty { margin: 8px 5px; color: var(--vscode-descriptionForeground); }
+#empty { color: var(--vscode-descriptionForeground); }

@@ -4,7 +4,7 @@ import {
 } from "../annotation";
 import type {
   AnnotationItem, Edit, GeometryChange, NumericStyleProperty, PlacementSubject,
-  PlacementTarget, Point, Region, ShapePart, ShapeStyle,
+  Point, Region, ShapePart, ShapeStyle,
 } from "../annotation";
 import type { DocumentState, EditorMessage, HostMessage, OriginalImage } from "../protocol";
 import { materialIcon } from "../material-icons";
@@ -42,9 +42,8 @@ const imageColor = element<HTMLInputElement>("image-color");
 const imageLine = element<HTMLSelectElement>("image-line");
 const imageStrokeWidth = element<HTMLInputElement>("image-stroke-width");
 const imageMarkerDiameter = element<HTMLInputElement>("image-marker-diameter");
-const alignmentTools = element<HTMLElement>("alignment");
+const alignmentTools = element<HTMLFieldSetElement>("alignment");
 const selectionCount = element("selection-count");
-const placementTarget = element<HTMLSelectElement>("placement-target");
 const itemProperties = element<HTMLElement>("item-properties");
 const itemStyle = element<HTMLFieldSetElement>("item-style");
 const geometryForm = element<HTMLFormElement>("geometry");
@@ -342,7 +341,9 @@ function selectedItems(): AnnotationItem[] {
   return state?.data?.items.filter(item => hasSelectedShape(item.id)) ?? [];
 }
 
-function setSelection(id: string | undefined, part: PlacementTarget, toggle: boolean): void {
+type SelectionPart = ShapePart | "pair";
+
+function setSelection(id: string | undefined, part: SelectionPart, toggle: boolean): void {
   if (!toggle) {
     selection.region.clear();
     selection.marker.clear();
@@ -357,7 +358,7 @@ function setSelection(id: string | undefined, part: PlacementTarget, toggle: boo
   }
 }
 
-function select(id: string | undefined, part: PlacementTarget = "pair", toggle = false): void {
+function select(id: string | undefined, part: SelectionPart = "pair", toggle = false): void {
   setSelection(id, part, toggle);
   renderSelection();
 }
@@ -368,14 +369,8 @@ function renderSelection(): void {
   renderProperties();
 }
 
-function placementSubjects(items = selectedItems()): PlacementSubject[] {
-  const target = placementTarget.value;
-  if (target === "pair") return items.map(({ id }) => ({ id, part: "pair" }));
-  return items.flatMap<PlacementSubject>(({ id }) => {
-    if ((target === "selected" || target === "region") && selection.region.has(id)) return [{ id, part: "region" }];
-    if ((target === "selected" || target === "marker") && selection.marker.has(id)) return [{ id, part: "marker" }];
-    return [];
-  });
+function placementSubjects(): PlacementSubject[] {
+  return selectedItems().map(({ id }) => ({ id, part: selection.region.has(id) ? "region" : "marker" }));
 }
 
 function pendingGeometry(items: AnnotationItem[], edits: Edit[]): AnnotationItem[] {
@@ -413,17 +408,15 @@ function renderProperties(): void {
   const canEditGeometry = hasEditableGeometry();
   imageStyleToggle.disabled = !data;
   imageStyle.disabled = !data;
-  const shapeCount = selection.region.size + selection.marker.size;
-  const subjects = placementSubjects(items);
-  alignmentTools.hidden = shapeCount < 2;
-  selectionCount.textContent = `${shapeCount}図形を選択`;
+  alignmentTools.disabled = !canEditGeometry;
+  selectionCount.textContent = items.length ? `${items.length}項目を選択` : "図形を選択すると編集できます。";
   for (const button of alignmentTools.querySelectorAll("button")) {
     const minimumSelection = button.dataset.distribute ? 3 : 2;
-    button.disabled = !canEditGeometry || subjects.length < minimumSelection;
+    button.disabled = items.length < minimumSelection;
   }
 
   const item = items.length === 1 ? items[0] : undefined;
-  itemProperties.hidden = !shapeCount;
+  itemProperties.hidden = !items.length;
   itemStyle.hidden = !item;
   for (const input of [itemStrokeWidth, itemMarkerDiameter]) {
     if (styleDrafts.get(input) !== item?.id) styleDrafts.delete(input);
@@ -602,7 +595,6 @@ itemLine.addEventListener("change", () => {
     kind: "edit", edit: { kind: "style", id: item.id, property: "lineStyle", value: value || null },
   });
 });
-placementTarget.addEventListener("change", renderProperties);
 for (const button of alignmentTools.querySelectorAll("button")) {
   button.addEventListener("click", () => {
     if (button.disabled || !applyGeometry()) return;
