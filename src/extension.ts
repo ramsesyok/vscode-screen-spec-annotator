@@ -288,6 +288,18 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
             </div>
           </div>
         </fieldset>
+        <select id="marker-position" aria-label="丸番号の配置" disabled>
+          <option value="" disabled selected>丸番号の配置</option>
+          <option value="top-left">左上</option>
+          <option value="middle-left">左中央</option>
+          <option value="bottom-left">左下</option>
+          <option value="top-right">右上</option>
+          <option value="middle-right">右中央</option>
+          <option value="bottom-right">右下</option>
+          <option value="top-center">中央上</option>
+          <option value="center">中央</option>
+          <option value="bottom-center">中央下</option>
+        </select>
       </div>
       <div id="notice" role="status" hidden></div>
       <div id="json-actions" hidden>${iconButton("data_object", "JSONエディターで開く", 'id="json"')}</div>

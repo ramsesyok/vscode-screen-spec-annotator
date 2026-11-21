@@ -1,9 +1,9 @@
 import {
   applyStyleValue, clamp, constrainMarker, constrainRegionPosition, defaultStrokeWidth, effectiveMarkerDiameter,
-  isAlignment, isDistributionDirection, isLineStyle, markerAfterRegionMove, markerRadius, placementBounds, regionBetween, updatedGeometry,
+  isAlignment, isDistributionDirection, isLineStyle, isMarkerAnchor, markerAfterRegionMove, markerRadius, placementBounds, regionBetween, updatedGeometry,
 } from "../annotation";
 import type {
-  AnnotationItem, Edit, GeometryChange, NumericStyleProperty, PlacementSubject,
+  AnnotationItem, Edit, GeometryChange, MarkerAnchor, NumericStyleProperty, PlacementSubject,
   Point, Region, ShapePart, ShapeStyle,
 } from "../annotation";
 import type { DocumentState, EditorMessage, HostMessage, OriginalImage } from "../protocol";
@@ -43,6 +43,7 @@ const imageLine = element<HTMLSelectElement>("image-line");
 const imageStrokeWidth = element<HTMLInputElement>("image-stroke-width");
 const imageMarkerDiameter = element<HTMLInputElement>("image-marker-diameter");
 const alignmentTools = element<HTMLFieldSetElement>("alignment");
+const markerPosition = element<HTMLSelectElement>("marker-position");
 const selectionCount = element("selection-count");
 const itemProperties = element<HTMLElement>("item-properties");
 const itemStyle = element<HTMLFieldSetElement>("item-style");
@@ -164,9 +165,7 @@ window.addEventListener("message", event => {
     case "markerPreset": {
       const multiple = selection.region.size + selection.marker.size > 1;
       const ids = multiple && selection.region.size ? [...selection.region] : [message.id];
-      if (hasEditableGeometry() && applyGeometry()) {
-        enqueue({ kind: "edit", edit: { kind: "markerPreset", ids, anchor: message.anchor } });
-      }
+      applyMarkerPreset(ids, message.anchor);
       break;
     }
     case "copyRects":
@@ -426,6 +425,7 @@ function renderProperties(): void {
   imageStyleToggle.disabled = !data;
   imageStyle.disabled = !data;
   alignmentTools.disabled = !canEditGeometry;
+  markerPosition.disabled = !canEditGeometry || !items.length;
   selectionCount.textContent = items.length ? `${items.length}項目を選択` : "図形を選択すると編集できます。";
   for (const button of alignmentTools.querySelectorAll("button")) {
     const minimumSelection = button.dataset.distribute ? 3 : 2;
@@ -610,6 +610,18 @@ itemLine.addEventListener("change", () => {
     kind: "edit", edit: { kind: "style", id: item.id, property: "lineStyle", value: value || null },
   });
 });
+function applyMarkerPreset(ids: string[], anchor: MarkerAnchor): void {
+  if (ids.length && hasEditableGeometry() && applyGeometry()) {
+    enqueue({ kind: "edit", edit: { kind: "markerPreset", ids, anchor } });
+  }
+}
+
+markerPosition.addEventListener("change", () => {
+  const anchor = markerPosition.value;
+  markerPosition.value = "";
+  if (isMarkerAnchor(anchor)) applyMarkerPreset(selectedItems().map(({ id }) => id), anchor);
+});
+
 for (const button of alignmentTools.querySelectorAll("button")) {
   button.addEventListener("click", () => {
     if (button.disabled || !applyGeometry()) return;

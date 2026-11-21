@@ -149,7 +149,7 @@ rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
 .property-grid label { display: grid; gap: 3px; }
 .property-grid label.inline-control { grid-column: 1 / -1; display: flex; align-items: center; }
 .property-grid > .icon-button { grid-column: 2; justify-self: end; }
-.properties input[type="number"], .properties select {
+.properties input[type="number"], .properties select, #marker-position {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -159,6 +159,7 @@ rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
 }
+#marker-position { width: auto; max-width: 100%; min-height: 32px; }
 .properties input[type="color"] { width: 2.8em; min-height: 28px; }
 #geometry-error { margin: 0 0 8px; color: var(--vscode-errorForeground); }
 table { border-collapse: collapse; width: 100%; }
