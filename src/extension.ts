@@ -11,6 +11,7 @@ import type { DocumentState, HostMessage } from "./protocol";
 
 const viewType = "screenSpecAnnotator.annotations";
 const annotationSuffix = ".annotations.json";
+const styleSetting = "defaultStyle";
 
 function iconButton(icon: MaterialIconName, label: string, attributes: string, type = "button", title = label): string {
   return `<button type="${type}" class="icon-button" ${attributes} aria-label="${label}" title="${title}">${materialIcon(icon)}</button>`;
@@ -68,7 +69,8 @@ async function createAnnotation(uri?: vscode.Uri): Promise<void> {
 
     const relative = relativeImagePath(destination.fsPath, uri.fsPath);
     try {
-      await writeFile(destination.fsPath, serialize(newAnnotation(relative, original.identity)), { flag: "wx" });
+      const defaults = vscode.workspace.getConfiguration("screenSpecAnnotator").get(styleSetting);
+      await writeFile(destination.fsPath, serialize(newAnnotation(relative, original.identity, defaults)), { flag: "wx" });
       break;
     } catch (error) {
       if (!isAlreadyPresent(error)) throw error;
@@ -93,9 +95,8 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
   moveMarker(anchor: MarkerAnchor, args: unknown): void {
     if (typeof args !== "object" || args === null ||
         !("annotationPanel" in args) || typeof args.annotationPanel !== "string" ||
-        !("annotationMarker" in args)) return;
-    const edit = { kind: "markerPreset", id: args.annotationMarker, anchor } as const;
-    if (isEdit(edit)) this.panels.get(args.annotationPanel)?.({ type: "markerPreset", edit });
+        !("annotationMarker" in args) || typeof args.annotationMarker !== "string") return;
+    this.panels.get(args.annotationPanel)?.({ type: "markerPreset", id: args.annotationMarker, anchor });
   }
 
   resolveCustomTextEditor(document: vscode.TextDocument, panel: vscode.WebviewPanel): void {
@@ -155,7 +156,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
         void vscode.commands.executeCommand("vscode.openWith", document.uri, "default");
         return;
       }
-      if ((message.type !== "edit" && message.type !== "save") ||
+      if ((message.type !== "edit" && message.type !== "save" && message.type !== "saveDefaultStyle") ||
           !("request" in message) || typeof message.request !== "number" ||
           !Number.isSafeInteger(message.request) ||
           !("version" in message) || typeof message.version !== "number" ||
@@ -175,6 +176,12 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
           const state = readDocument(document);
           if (!state.data) throw new Error(state.error);
           if (state.version !== version) throw new Error("注釈が更新されました。最新の内容を確認してください。");
+          if (message.type === "saveDefaultStyle") {
+            await vscode.workspace.getConfiguration("screenSpecAnnotator")
+              .update(styleSetting, state.data.style, vscode.ConfigurationTarget.Global);
+            post({ type: "result", request, state: readDocument(document) });
+            return;
+          }
           if (!isEdit(edit)) throw new Error("編集操作の内容が無効です。");
 
           const selectedId = applyAnnotationEdit(state.data, edit, () => randomBytes(5).toString("base64url").slice(0, 6));
@@ -243,10 +250,11 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
       </label>
       <label>線の太さ（px） <input id="image-stroke-width" type="number" step="any" aria-label="共通の線の太さ"></label>
       <label>丸番号の直径（px） <input id="image-marker-diameter" type="number" step="any" aria-label="共通の丸番号の直径" placeholder="自動"></label>
+      ${iconButton("save", "新規画像の既定スタイルにする", 'id="save-default-style"')}
     </fieldset>
     <div id="notice" role="status" hidden></div>
     <div id="json-actions" hidden>${iconButton("data_object", "JSONエディターで開く", 'id="json"')}</div>
-    <div id="viewport" aria-label="原画像上の矩形と丸番号">
+    <div id="viewport" aria-label="原画像上の矩形と丸番号" tabindex="0">
       <div id="surface" hidden>
         <canvas id="original"></canvas>
         <svg id="annotations" aria-label="注釈の位置"></svg>

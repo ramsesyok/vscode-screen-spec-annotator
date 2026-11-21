@@ -83,9 +83,7 @@ rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
 .handle { fill: #fff; stroke: #097ee3; stroke-width: 2; cursor: crosshair; }
 .region.preview { stroke-dasharray: 4 3; pointer-events: none; }
 .selection-box {
-  fill: var(--vscode-focusBorder, #097ee3);
   fill-opacity: .15;
-  stroke: var(--vscode-focusBorder, #097ee3);
   stroke-dasharray: 4 3;
   vector-effect: non-scaling-stroke;
   pointer-events: none;

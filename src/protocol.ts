@@ -1,4 +1,4 @@
-import type { AnnotationDocument, Edit, ImageIdentity } from "./annotation";
+import type { AnnotationDocument, Edit, ImageIdentity, MarkerAnchor } from "./annotation";
 
 export interface OriginalImage {
   identity: ImageIdentity;
@@ -16,10 +16,10 @@ export type EditorMessage =
   | { type: "ready" }
   | { type: "openJson" }
   | { type: "edit"; request: number; version: number; edit: Edit }
-  | { type: "save"; request: number; version: number };
+  | { type: "save" | "saveDefaultStyle"; request: number; version: number };
 
 export type HostMessage =
   | { type: "state"; state: DocumentState }
   | { type: "image"; imagePath: string; image?: OriginalImage; error?: string }
-  | { type: "markerPreset"; edit: Extract<Edit, { kind: "markerPreset" }> }
+  | { type: "markerPreset"; id: string; anchor: MarkerAnchor }
   | { type: "result"; request: number; state: DocumentState; selectedId?: string; error?: string };

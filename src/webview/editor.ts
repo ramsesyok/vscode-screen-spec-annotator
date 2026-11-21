@@ -74,6 +74,7 @@ let state: DocumentState | undefined;
 let original: OriginalImage | undefined;
 let originalError: string | undefined;
 let editError: string | undefined;
+let editStatus: string | undefined;
 let imageRequest = 0;
 const selection = { region: new Set<string>(), marker: new Set<string>() };
 const shapeParts = ["region", "marker"] as const;
@@ -92,7 +93,7 @@ type Gesture =
   | { kind: "marker"; start: Point; item: AnnotationItem; preview?: Point };
 let gesture: (Gesture & { pointer: number; pointerStart: Point }) | undefined;
 
-type QueuedOperation = { kind: "save" } | { kind: "edit"; edit: Edit };
+type QueuedOperation = { kind: "save" | "saveDefaultStyle" } | { kind: "edit"; edit: Edit };
 const pending: QueuedOperation[] = [];
 let current: { operation: QueuedOperation; request: number } | undefined;
 let nextRequest = 0;
@@ -106,6 +107,7 @@ function enqueue(operation: QueuedOperation): void {
     pending.push(operation);
   }
   editError = undefined;
+  editStatus = undefined;
   sendNext();
   renderNotice();
 }
@@ -117,10 +119,10 @@ function sendNext(): void {
   const request = ++nextRequest;
   current = { operation, request };
   const version = state.version;
-  if (operation.kind === "save") {
-    vscode.postMessage({ type: "save", request, version });
-  } else {
+  if (operation.kind === "edit") {
     vscode.postMessage({ type: "edit", request, version, edit: operation.edit });
+  } else {
+    vscode.postMessage({ type: operation.kind, request, version });
   }
 }
 
@@ -157,18 +159,26 @@ window.addEventListener("message", event => {
     case "image":
       if (message.imagePath === state?.data?.imagePath) void displayImage(message.image, message.error);
       break;
-    case "markerPreset":
-      if (hasEditableGeometry() && applyGeometry()) enqueue({ kind: "edit", edit: message.edit });
+    case "markerPreset": {
+      const multiple = selection.region.size + selection.marker.size > 1;
+      const ids = multiple && selection.region.size ? [...selection.region] : [message.id];
+      if (hasEditableGeometry() && applyGeometry()) {
+        enqueue({ kind: "edit", edit: { kind: "markerPreset", ids, anchor: message.anchor } });
+      }
       break;
+    }
     case "result":
       if (current?.request !== message.request) return;
+      const { operation } = current;
       current = undefined;
       if (message.error) {
         editError = message.error;
-        // Never save after a failed operation without another explicit save request.
+        // Skip pending saves when an earlier edit in the queue fails.
         for (let i = pending.length - 1; i >= 0; i--) {
-          if (pending[i].kind === "save") pending.splice(i, 1);
+          if (pending[i].kind !== "edit") pending.splice(i, 1);
         }
+      } else if (operation.kind === "saveDefaultStyle") {
+        editStatus = "新規画像の既定スタイルを VS Code の設定に保存しました。";
       }
       if (message.selectedId) {
         setSelection(message.selectedId, "pair", false);
@@ -230,7 +240,7 @@ function renderNotice(): void {
   } else if (changed) {
     imageStatus = "原画像が更新されています。保存済みの注釈位置を確認してください。";
   }
-  notice.textContent = state?.error ?? originalError ?? editError ?? imageStatus ??
+  notice.textContent = state?.error ?? originalError ?? editError ?? imageStatus ?? editStatus ??
     (original ? "" : "原画像を読み込んでいます…");
   notice.hidden = !notice.textContent;
   jsonActions.hidden = !state?.error;
@@ -418,7 +428,7 @@ function renderProperties(): void {
   for (const input of [itemStrokeWidth, itemMarkerDiameter]) {
     if (styleDrafts.get(input) !== item?.id) styleDrafts.delete(input);
   }
-  removeButton.disabled = !item;
+  removeButton.disabled = !items.length;
   geometryFields.disabled = !canEditGeometry;
   const key = items.map(({ id }) =>
     `${id}:${Number(selection.region.has(id))}${Number(selection.marker.has(id))}`).join(",");
@@ -553,6 +563,12 @@ for (const { input, property, scope } of numericStyleFields) {
   });
 }
 
+element<HTMLButtonElement>("save-default-style").addEventListener("click", () => {
+  if (numericStyleFields.filter(field => field.scope === "image")
+    .every(({ input, property }) => commitStyleNumber(input, property))) {
+    enqueue({ kind: "saveDefaultStyle" });
+  }
+});
 imageStyleToggle.addEventListener("click", () => {
   imageStyle.hidden = !imageStyle.hidden;
   imageStyleToggle.setAttribute("aria-expanded", String(!imageStyle.hidden));
@@ -679,7 +695,8 @@ function renderAnnotations(): void {
       "stroke-width": data.style.strokeWidth ?? defaultStrokeWidth, class: "region preview" }));
   }
   if (gesture?.kind === "select-box" && gesture.preview) {
-    annotations.append(svg("rect", { ...gesture.preview, class: "selection-box" }));
+    annotations.append(svg("rect", { ...gesture.preview, class: "selection-box",
+      stroke: data.style.color, fill: data.style.color }));
   }
 }
 
@@ -724,6 +741,7 @@ function boundPoint(point: Point): Point {
 
 viewport.addEventListener("pointerdown", event => {
   if (!original || gesture || (event.button !== 0 && event.button !== 1)) return;
+  viewport.focus({ preventScroll: true });
   const point = viewportPoint(event);
   const target = event.target as SVGElement;
   const id = target.closest<SVGGElement>("[data-id]")?.dataset.id;
@@ -877,10 +895,13 @@ function setMode(next: typeof mode): void {
 selectButton.addEventListener("click", () => setMode("select"));
 drawButton.addEventListener("click", () => setMode("draw"));
 panButton.addEventListener("click", () => setMode("pan"));
-removeButton.addEventListener("click", () => {
-  const items = selectedItems();
-  if (items.length === 1) enqueue({ kind: "edit", edit: { kind: "remove", id: items[0].id } });
-});
+function removeSelection(): void {
+  const ids = selectedItems().map(({ id }) => id);
+  if (!ids.length) return;
+  select(undefined);
+  enqueue({ kind: "edit", edit: { kind: "remove", ids } });
+}
+removeButton.addEventListener("click", removeSelection);
 const center = () => ({ x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
 zoomIn.addEventListener("click", () => zoomBy(1.25, center()));
 zoomOut.addEventListener("click", () => zoomBy(0.8, center()));
@@ -908,7 +929,27 @@ splitter.addEventListener("keydown", event => {
 });
 
 window.addEventListener("keydown", event => {
-  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.isComposing ||
+  if (event.isComposing) return;
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+    if (event.key === "Escape" && (gesture || selection.region.size || selection.marker.size)) {
+      if (gesture && viewport.hasPointerCapture(gesture.pointer)) viewport.releasePointerCapture(gesture.pointer);
+      gesture = undefined;
+      viewport.focus({ preventScroll: true });
+      select(undefined);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    const target = event.target;
+    if (event.key === "Delete" && !gesture && (selection.region.size || selection.marker.size) &&
+        !(target instanceof Element && target.closest('input:not([type="checkbox"]), textarea, select, [contenteditable]'))) {
+      removeSelection();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+  }
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey ||
       event.key.toLowerCase() !== "s" || !state?.data) return;
   event.preventDefault();
   event.stopImmediatePropagation();

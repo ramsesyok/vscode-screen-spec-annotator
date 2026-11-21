@@ -83,12 +83,12 @@ export type Edit =
   | { kind: "region"; id: string; region: Region }
   | { kind: "moveRegion"; id: string; position: Point }
   | { kind: "marker"; id: string; marker: Point }
-  | { kind: "markerPreset"; id: string; anchor: MarkerAnchor }
+  | { kind: "markerPreset"; ids: string[]; anchor: MarkerAnchor }
   | { kind: "geometry"; changes: GeometryChange[] }
   | PlacementEdit
   | StyleEdit
   | { kind: "name"; id: string; name: string }
-  | { kind: "remove"; id: string };
+  | { kind: "remove"; ids: string[] };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -214,7 +214,16 @@ export function parseAnnotation(text: string): AnnotationDocument {
     coordinateReviewPending, highestIssuedNumber, style: { ...style, color: style.color, lineStyle: style.lineStyle }, items };
 }
 
-export function newAnnotation(imagePath: string, image: ImageIdentity): AnnotationDocument {
+export function newAnnotation(imagePath: string, image: ImageIdentity, defaults?: unknown): AnnotationDocument {
+  const settings = isRecord(defaults) ? defaults : {};
+  const style: ShapeStyle = {
+    color: isColor(settings.color) ? settings.color : "#113a60",
+    lineStyle: isLineStyle(settings.lineStyle) ? settings.lineStyle : "solid",
+  };
+  if (isPositiveNumber(settings.strokeWidth)) style.strokeWidth = settings.strokeWidth;
+  if (isPositiveNumber(settings.markerDiameter)) {
+    style.markerDiameter = Math.min(settings.markerDiameter, image.width, image.height);
+  }
   return {
     version: 2,
     imagePath,
@@ -222,7 +231,7 @@ export function newAnnotation(imagePath: string, image: ImageIdentity): Annotati
     coordinateSize: { width: image.width, height: image.height },
     coordinateReviewPending: false,
     highestIssuedNumber: 0,
-    style: { color: "#113a60", lineStyle: "solid" },
+    style,
     items: [],
   };
 }
@@ -230,6 +239,11 @@ export function newAnnotation(imagePath: string, image: ImageIdentity): Annotati
 export function isEdit(value: unknown): value is Edit {
   if (!isRecord(value)) return false;
   if (value.kind === "add") return isRegion(value.region);
+  if (value.kind === "remove" || value.kind === "markerPreset") {
+    return Array.isArray(value.ids) && value.ids.length > 0 && value.ids.every(isItemId) &&
+      new Set(value.ids).size === value.ids.length &&
+      (value.kind === "remove" || (typeof value.anchor === "string" && Object.hasOwn(markerAnchors, value.anchor)));
+  }
   if (value.kind === "geometry") {
     return Array.isArray(value.changes) && value.changes.length > 0 && value.changes.every(isGeometryChange) &&
       new Set(value.changes.map(change => change.id)).size === value.changes.length;
@@ -260,9 +274,7 @@ export function isEdit(value: unknown): value is Edit {
     case "region": return isRegion(value.region);
     case "moveRegion": return isPoint(value.position);
     case "marker": return isPoint(value.marker);
-    case "markerPreset": return typeof value.anchor === "string" && Object.hasOwn(markerAnchors, value.anchor);
     case "name": return typeof value.name === "string";
-    case "remove": return true;
     default: return false;
   }
 }
@@ -343,14 +355,27 @@ export function constrainRegionPosition(item: AnnotationItem, position: Point, s
   return { x: item.region.x + x, y: item.region.y + y };
 }
 
-function alignedPositions(bounds: Region[], alignment: Alignment, axis: "x" | "y"): number[] {
+function alignedPositions(
+  targets: { bounds: Region; movement: Region }[],
+  alignment: Alignment,
+  axis: "x" | "y",
+  imageLength: number,
+): number[] {
   const length = axis === "x" ? "width" : "height";
-  const isStart = alignment === "left" || alignment === "top";
-  const isEnd = alignment === "right" || alignment === "bottom";
-  const start = Math.min(...bounds.map(region => region[axis]));
-  const end = Math.max(...bounds.map(region => region[axis] + region[length]));
-  return bounds.map(region =>
-    isStart ? start : isEnd ? end - region[length] : start + (end - start - region[length]) / 2);
+  const fraction = alignment === "left" || alignment === "top" ? 0
+    : alignment === "right" || alignment === "bottom" ? 1 : 0.5;
+  const start = Math.min(...targets.map(({ bounds }) => bounds[axis]));
+  const end = Math.max(...targets.map(({ bounds }) => bounds[axis] + bounds[length]));
+  const edges = targets.map(({ bounds, movement }) => ({
+    anchor: bounds[axis] + fraction * bounds[length],
+    movement,
+  }));
+  const min = Math.max(...edges.map(({ anchor, movement }) => anchor - movement[axis]));
+  const max = Math.min(...edges.map(({ anchor, movement }) =>
+    anchor + imageLength - movement[axis] - movement[length]));
+  if (min > max + 1e-7) throw new Error("矩形と丸番号を画像内に収めたまま揃えられません。");
+  const common = clamp(start + fraction * (end - start), min, max);
+  return targets.map(({ bounds }) => common - fraction * bounds[length]);
 }
 
 function distributedPositions(bounds: Region[], axis: "x" | "y"): number[] {
@@ -402,20 +427,26 @@ function arrangeItems(items: Map<string, AnnotationItem>, edit: PlacementEdit, s
   const horizontal = edit.kind === "distribute" ? edit.direction === "horizontal"
     : edit.alignment === "left" || edit.alignment === "center-x" || edit.alignment === "right";
   const axis = horizontal ? "x" : "y";
+  const length = horizontal ? size.width : size.height;
+  const span = horizontal ? "width" : "height";
   const targets = edit.subjects.map(({ id, part }) => {
     const item = items.get(id);
     if (!item) throw new Error("対象の項目が見つかりません。");
-    return { item, part, bounds: placementBounds(item, part, size, style) };
+    return { item, part, bounds: placementBounds(item, part, size, style),
+      movement: placementBounds(item, part === "region" ? "pair" : part, size, style) };
   });
   if (edit.kind === "distribute") targets.sort((a, b) => a.bounds[axis] - b.bounds[axis]);
-  const bounds = targets.map(entry => entry.bounds);
   const positions = edit.kind === "align"
-    ? alignedPositions(bounds, edit.alignment, axis)
-    : distributedPositions(bounds, axis);
+    ? alignedPositions(targets, edit.alignment, axis, length)
+    : distributedPositions(targets.map(entry => entry.bounds), axis);
 
-  const changes = targets.map(({ item, part, bounds }, index): GeometryChange => {
+  const changes = targets.map(({ item, part, bounds, movement }, index): GeometryChange => {
     const position = positions[index];
     const offset = position - bounds[axis];
+    if (edit.kind === "distribute" && (movement[axis] + offset < -1e-7 ||
+        movement[axis] + movement[span] + offset > length + 1e-7)) {
+      throw new Error("両端を固定して等間隔にすると図形が画像外に出ます。丸番号や両端の位置を調整してください。");
+    }
     return {
       id: item.id,
       region: part === "marker" ? undefined : { [axis]: part === "region" ? position : item.region[axis] + offset },
@@ -475,6 +506,32 @@ export function applyAnnotationEdit(
     editAnnotationStyle(data, edit);
     return;
   }
+  if (edit.kind === "remove" || edit.kind === "markerPreset") {
+    const items = new Map(data.items.map(item => [item.id, item]));
+    const targets = edit.ids.map(id => {
+      const item = items.get(id);
+      if (!item) throw new Error("対象の項目が見つかりません。");
+      return item;
+    });
+    if (edit.kind === "remove") {
+      const ids = new Set(edit.ids);
+      data.items = data.items.filter(item => !ids.has(item.id));
+    } else {
+      const [horizontal, vertical] = markerAnchors[edit.anchor];
+      const markers = targets.map(item => {
+        const { x, y, width, height } = item.region;
+        const point = { x: x + width * horizontal, y: y + height * vertical };
+        const diameter = effectiveMarkerDiameter(data.style, item);
+        if (edit.anchor !== "center") return constrainMarker(point, item.number, size, diameter);
+        if (!markerFits(point, item.number, size, diameter)) {
+          throw new Error("矩形の中央に丸番号が収まりません。丸番号の直径を小さくしてください。");
+        }
+        return point;
+      });
+      targets.forEach((item, index) => { item.marker = markers[index]; });
+    }
+    return;
+  }
   if (edit.kind === "add") {
     const number = data.highestIssuedNumber + 1;
     if (!Number.isSafeInteger(number)) throw new Error("新規項目に割り当てられる番号がありません。");
@@ -506,26 +563,8 @@ export function applyAnnotationEdit(
     case "marker":
       item.marker = constrainMarker(edit.marker, item.number, size, effectiveMarkerDiameter(data.style, item));
       break;
-    case "markerPreset": {
-      const [horizontal, vertical] = markerAnchors[edit.anchor];
-      const { x, y, width, height } = item.region;
-      const point = { x: x + width * horizontal, y: y + height * vertical };
-      const diameter = effectiveMarkerDiameter(data.style, item);
-      if (edit.anchor === "center") {
-        if (!markerFits(point, item.number, size, diameter)) {
-          throw new Error("矩形の中央に丸番号が収まりません。丸番号の直径を小さくしてください。");
-        }
-        item.marker = point;
-      } else {
-        item.marker = constrainMarker(point, item.number, size, diameter);
-      }
-      break;
-    }
     case "name":
       item.name = edit.name;
-      break;
-    case "remove":
-      data.items.splice(index, 1);
       break;
   }
 }

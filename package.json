@@ -15,6 +15,24 @@
   "main": "./dist/extension.js",
   "files": ["dist", "media", "README.md", "THIRD_PARTY_NOTICES.md"],
   "contributes": {
+    "configuration": {
+      "title": "Screen Spec Annotator",
+      "properties": {
+        "screenSpecAnnotator.defaultStyle": {
+          "type": "object",
+          "scope": "application",
+          "description": "新規画像の注釈に適用する共通スタイルです。",
+          "default": { "color": "#113a60", "lineStyle": "solid", "strokeWidth": 2, "markerDiameter": null },
+          "additionalProperties": false,
+          "properties": {
+            "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "線の色（#RRGGBB）" },
+            "lineStyle": { "type": "string", "enum": ["solid", "dashed", "dotted"], "description": "線種" },
+            "strokeWidth": { "type": ["number", "null"], "exclusiveMinimum": 0, "description": "線の太さ（px）。null は既定の太さ" },
+            "markerDiameter": { "type": ["number", "null"], "exclusiveMinimum": 0, "description": "丸番号の直径（原画像のpx）。null は自動" }
+          }
+        }
+      }
+    },
     "commands": [
       {
         "command": "screenSpecAnnotator.create",
