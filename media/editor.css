@@ -17,12 +17,30 @@ button {
   cursor: pointer;
 }
 button:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
-button[aria-pressed="true"] {
+button[aria-pressed="true"], button[aria-expanded="true"] {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
 }
 button:disabled { opacity: .55; cursor: default; }
 :focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 4px;
+}
+.material-icon {
+  display: block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  pointer-events: none;
+}
+.row-number .material-icon { width: 16px; height: 16px; }
 
 #editor {
   --image-height: 65%;

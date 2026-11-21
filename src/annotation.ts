@@ -81,6 +81,7 @@ type PlacementEdit = { subjects: PlacementSubject[] } & (
 export type Edit =
   | { kind: "add"; region: Region }
   | { kind: "region"; id: string; region: Region }
+  | { kind: "moveRegion"; id: string; position: Point }
   | { kind: "marker"; id: string; marker: Point }
   | { kind: "markerPreset"; id: string; anchor: MarkerAnchor }
   | { kind: "geometry"; changes: GeometryChange[] }
@@ -235,7 +236,7 @@ export function isEdit(value: unknown): value is Edit {
   }
   if (value.kind === "align" || value.kind === "distribute") {
     if (!Array.isArray(value.subjects) || !value.subjects.every(isPlacementSubject) ||
-        new Set(value.subjects.map(({ id, part }) => `${id}:${part}`)).size !== value.subjects.length) {
+        new Set(value.subjects.map(({ id }) => id)).size !== value.subjects.length) {
       return false;
     }
     if (value.subjects.some(subject => subject.part === "pair") &&
@@ -257,6 +258,7 @@ export function isEdit(value: unknown): value is Edit {
   if (!isItemId(value.id)) return false;
   switch (value.kind) {
     case "region": return isRegion(value.region);
+    case "moveRegion": return isPoint(value.position);
     case "marker": return isPoint(value.marker);
     case "markerPreset": return typeof value.anchor === "string" && Object.hasOwn(markerAnchors, value.anchor);
     case "name": return typeof value.name === "string";
@@ -327,6 +329,20 @@ export function placementBounds(item: AnnotationItem, target: PlacementTarget, s
   };
 }
 
+export function markerAfterRegionMove(item: AnnotationItem, position: Point): Point {
+  return {
+    x: item.marker.x + (position.x - item.region.x),
+    y: item.marker.y + (position.y - item.region.y),
+  };
+}
+
+export function constrainRegionPosition(item: AnnotationItem, position: Point, size: Size, style: ShapeStyle): Point {
+  const bounds = placementBounds(item, "pair", size, style);
+  const x = clamp(position.x - item.region.x, -bounds.x, size.width - bounds.x - bounds.width);
+  const y = clamp(position.y - item.region.y, -bounds.y, size.height - bounds.y - bounds.height);
+  return { x: item.region.x + x, y: item.region.y + y };
+}
+
 function alignedPositions(bounds: Region[], alignment: Alignment, axis: "x" | "y"): number[] {
   const length = axis === "x" ? "width" : "height";
   const isStart = alignment === "left" || alignment === "top";
@@ -362,8 +378,10 @@ export function updatedGeometry(item: AnnotationItem, change: GeometryChange, si
     updated.region = { ...item.region, ...change.region };
     if (!regionFits(updated.region, size)) throw new Error("幅と高さは正の値にし、矩形を画像の内側に収めてください。");
   }
-  if (change.marker) {
-    updated.marker = { ...item.marker, ...change.marker };
+  const markerFollows = updated.region && (updated.region.x !== item.region.x || updated.region.y !== item.region.y);
+  if (change.marker || markerFollows) {
+    const marker = markerFollows && updated.region ? markerAfterRegionMove(item, updated.region) : item.marker;
+    updated.marker = { ...marker, ...change.marker };
     if (!markerFits(updated.marker, item.number, size, effectiveMarkerDiameter(style, item))) {
       throw new Error("丸番号全体が画像の内側に収まる座標を指定してください。");
     }
@@ -401,7 +419,7 @@ function arrangeItems(items: Map<string, AnnotationItem>, edit: PlacementEdit, s
     return {
       id: item.id,
       region: part === "marker" ? undefined : { [axis]: part === "region" ? position : item.region[axis] + offset },
-      marker: part === "region" ? undefined : { [axis]: item.marker[axis] + offset },
+      marker: part === "marker" ? { [axis]: item.marker[axis] + offset } : undefined,
     };
   });
   applyGeometryChanges(items, changes, size, style);
@@ -480,6 +498,11 @@ export function applyAnnotationEdit(
     case "region":
       item.region = edit.region;
       break;
+    case "moveRegion": {
+      const position = constrainRegionPosition(item, edit.position, size, data.style);
+      Object.assign(item, updatedGeometry(item, { id: item.id, region: position }, size, data.style));
+      break;
+    }
     case "marker":
       item.marker = constrainMarker(edit.marker, item.number, size, effectiveMarkerDiameter(data.style, item));
       break;

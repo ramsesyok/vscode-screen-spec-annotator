@@ -1,12 +1,13 @@
 import {
-  applyStyleValue, clamp, constrainMarker, defaultStrokeWidth, effectiveMarkerDiameter,
-  isAlignment, isDistributionDirection, isLineStyle, markerRadius, placementBounds, regionBetween, updatedGeometry,
+  applyStyleValue, clamp, constrainMarker, constrainRegionPosition, defaultStrokeWidth, effectiveMarkerDiameter,
+  isAlignment, isDistributionDirection, isLineStyle, markerAfterRegionMove, markerRadius, placementBounds, regionBetween, updatedGeometry,
 } from "../annotation";
 import type {
   AnnotationItem, Edit, GeometryChange, NumericStyleProperty, PlacementSubject,
   PlacementTarget, Point, Region, ShapePart, ShapeStyle,
 } from "../annotation";
 import type { DocumentState, EditorMessage, HostMessage, OriginalImage } from "../protocol";
+import { materialIcon } from "../material-icons";
 
 declare function acquireVsCodeApi(): { postMessage(message: EditorMessage): void };
 const vscode = acquireVsCodeApi();
@@ -249,6 +250,7 @@ interface RowControls {
   row: HTMLTableRowElement;
   checkbox: HTMLInputElement;
   number: HTMLButtonElement;
+  numberLabel: HTMLSpanElement;
   name: HTMLTextAreaElement;
   composing: boolean;
 }
@@ -283,14 +285,17 @@ function renderRows(): void {
       row.insertCell().append(checkbox);
       const number = document.createElement("button");
       number.type = "button";
-      number.className = "row-number";
+      number.className = "row-number icon-button";
+      number.innerHTML = materialIcon("tag");
+      const numberLabel = document.createElement("span");
+      number.append(numberLabel);
       number.addEventListener("click", event => select(item.id, "pair", event.ctrlKey || event.metaKey || event.shiftKey));
       row.insertCell().append(number);
       const name = document.createElement("textarea");
       name.rows = 1;
       name.addEventListener("focus", () => select(item.id));
       const commit = () => enqueue({ kind: "edit", edit: { kind: "name", id: item.id, name: name.value } });
-      const entry = { row, checkbox, number, name, composing: false };
+      const entry = { row, checkbox, number, numberLabel, name, composing: false };
       name.addEventListener("compositionstart", () => { entry.composing = true; });
       name.addEventListener("compositionend", () => {
         entry.composing = false;
@@ -306,7 +311,9 @@ function renderRows(): void {
     if (rows.rows[index] !== controls.row) rows.insertBefore(controls.row, rows.rows[index] ?? null);
     renderRowSelection(item.id, controls);
     controls.checkbox.setAttribute("aria-label", `${item.number}番を選択`);
-    controls.number.textContent = String(item.number);
+    controls.numberLabel.textContent = String(item.number);
+    controls.number.title = `${item.number}番の図形を選択`;
+    controls.number.setAttribute("aria-label", controls.number.title);
     controls.name.setAttribute("aria-label", `${item.number}番の名称`);
     if (!editingNames.has(item.id) && !controls.composing && controls.name.value !== item.name) {
       controls.name.value = item.name;
@@ -352,9 +359,11 @@ function renderSelection(): void {
 function placementSubjects(items = selectedItems()): PlacementSubject[] {
   const target = placementTarget.value;
   if (target === "pair") return items.map(({ id }) => ({ id, part: "pair" }));
-  return items.flatMap(({ id }) => shapeParts
-    .filter(part => (target === "selected" || target === part) && selection[part].has(id))
-    .map(part => ({ id, part })));
+  return items.flatMap<PlacementSubject>(({ id }) => {
+    if ((target === "selected" || target === "region") && selection.region.has(id)) return [{ id, part: "region" }];
+    if ((target === "selected" || target === "marker") && selection.marker.has(id)) return [{ id, part: "marker" }];
+    return [];
+  });
 }
 
 function pendingGeometry(items: AnnotationItem[], edits: Edit[]): AnnotationItem[] {
@@ -363,9 +372,10 @@ function pendingGeometry(items: AnnotationItem[], edits: Edit[]): AnnotationItem
     if (edit.kind !== "geometry") continue;
     for (const change of edit.changes) {
       const item = draft.get(change.id);
-      if (item) draft.set(item.id, {
-        ...item, region: { ...item.region, ...change.region }, marker: { ...item.marker, ...change.marker },
-      });
+      if (item) {
+        const region = { ...item.region, ...change.region };
+        draft.set(item.id, { ...item, region, marker: { ...markerAfterRegionMove(item, region), ...change.marker } });
+      }
     }
   }
   return [...draft.values()];
@@ -622,7 +632,9 @@ function renderAnnotations(): void {
     const markerGroup = svg("g", { "data-id": item.id });
     const active = gesture && "item" in gesture && gesture.item.id === item.id ? gesture : undefined;
     const rect = (active?.kind === "move" || active?.kind === "resize") ? active.preview ?? item.region : item.region;
-    const marker = active?.kind === "marker" ? active.preview ?? item.marker : item.marker;
+    let marker = item.marker;
+    if (active?.kind === "move" && active.preview) marker = markerAfterRegionMove(active.item, active.preview);
+    if (active?.kind === "marker" && active.preview) marker = active.preview;
     const style = { ...data.style, ...item.style };
     const strokeWidth = style.strokeWidth ?? defaultStrokeWidth;
     const dashArray = { solid: "none", dashed: "7 4", dotted: "1 4" }[style.lineStyle];
@@ -771,11 +783,14 @@ function preview(event: PointerEvent): void {
       break;
     }
     case "move": {
-      const { region } = gesture.item;
+      const { item, start } = gesture;
+      const data = state?.data;
+      if (!data) return;
+      const { region } = item;
+      const positionToFit = { x: region.x + position.x - start.x, y: region.y + position.y - start.y };
       gesture.preview = {
         ...region,
-        x: clamp(region.x + position.x - gesture.start.x, 0, original.identity.width - region.width),
-        y: clamp(region.y + position.y - gesture.start.y, 0, original.identity.height - region.height),
+        ...constrainRegionPosition(item, positionToFit, data.coordinateSize, data.style),
       };
       break;
     }
@@ -821,6 +836,9 @@ viewport.addEventListener("pointerup", event => {
   if (completed.kind !== "pan" && completed.preview && (completed.kind === "add" || dragDistance >= 3)) {
     if (completed.kind === "marker") {
       enqueue({ kind: "edit", edit: { kind: "marker", id: completed.item.id, marker: completed.preview } });
+    } else if (completed.kind === "move") {
+      const { x, y } = completed.preview;
+      enqueue({ kind: "edit", edit: { kind: "moveRegion", id: completed.item.id, position: { x, y } } });
     } else if (completed.preview.width >= 1 && completed.preview.height >= 1) {
       const edit: Edit = completed.kind === "add"
         ? { kind: "add", region: completed.preview }

@@ -13,6 +13,7 @@
   },
   "categories": ["Other"],
   "main": "./dist/extension.js",
+  "files": ["dist", "media", "README.md", "THIRD_PARTY_NOTICES.md"],
   "contributes": {
     "commands": [
       {
@@ -108,7 +109,9 @@
   },
   "scripts": {
     "build": "esbuild src/extension.ts --bundle --platform=node --target=node20 --external:vscode --outfile=dist/extension.js && esbuild src/webview/editor.ts --bundle --platform=browser --target=chrome128 --outfile=dist/editor.js",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "vscode:prepublish": "npm run build",
+    "package:vsix": "npx --yes @vscode/vsce@4.1.1 package --no-dependencies --skip-license --githubBranch main"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

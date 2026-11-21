@@ -4,11 +4,17 @@ import { basename, dirname, extname, join } from "node:path";
 import * as vscode from "vscode";
 import { applyAnnotationEdit, isEdit, markerAnchors, newAnnotation, parseAnnotation } from "./annotation";
 import type { MarkerAnchor } from "./annotation";
+import { materialIcon } from "./material-icons";
+import type { MaterialIconName } from "./material-icons";
 import { readOriginalImage, relativeImagePath, resolveImagePath, supportsImage } from "./original-image";
 import type { DocumentState, HostMessage } from "./protocol";
 
 const viewType = "screenSpecAnnotator.annotations";
 const annotationSuffix = ".annotations.json";
+
+function iconButton(icon: MaterialIconName, label: string, attributes: string, type = "button", title = label): string {
+  return `<button type="${type}" class="icon-button" ${attributes} aria-label="${label}" title="${title}">${materialIcon(icon)}</button>`;
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -215,14 +221,14 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
 <main id="editor" data-vscode-context='{"annotationPanel":"${panelToken}"}'>
   <section id="image-panel" aria-label="画像と注釈">
     <div class="toolbar" role="group" aria-label="画像操作">
-      <button id="draw" type="button" aria-pressed="true">矩形を追加</button>
-      <button id="pan" type="button" aria-pressed="false">パン</button>
-      <button id="zoom-out" type="button" aria-label="縮小">−</button>
-      <button id="zoom-in" type="button" aria-label="拡大">＋</button>
-      <button id="fit" type="button">全体表示</button>
+      ${iconButton("add_box", "矩形を追加", 'id="draw" aria-pressed="true"')}
+      ${iconButton("pan_tool", "パン", 'id="pan" aria-pressed="false"')}
+      ${iconButton("zoom_out", "縮小", 'id="zoom-out"')}
+      ${iconButton("zoom_in", "拡大", 'id="zoom-in"')}
+      ${iconButton("fit_screen", "全体表示", 'id="fit"')}
       <output id="zoom" aria-label="表示倍率"></output>
-      <button id="remove" type="button">選択項目を削除</button>
-      <button id="image-style-toggle" type="button" aria-controls="image-style" aria-expanded="false">共通スタイル</button>
+      ${iconButton("delete_outline", "選択項目を削除", 'id="remove"')}
+      ${iconButton("tune", "共通スタイル", 'id="image-style-toggle" aria-controls="image-style" aria-expanded="false"')}
     </div>
     <fieldset id="image-style" class="properties" hidden disabled>
       <legend>画像全体の共通スタイル</legend>
@@ -238,7 +244,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
       <label>丸番号の直径（px） <input id="image-marker-diameter" type="number" step="any" aria-label="共通の丸番号の直径" placeholder="自動"></label>
     </fieldset>
     <div id="notice" role="status" hidden></div>
-    <div id="json-actions" hidden><button id="json" type="button">JSONエディターで開く</button></div>
+    <div id="json-actions" hidden>${iconButton("data_object", "JSONエディターで開く", 'id="json"')}</div>
     <div id="viewport" aria-label="原画像上の矩形と丸番号">
       <div id="surface" hidden>
         <canvas id="original"></canvas>
@@ -253,19 +259,19 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
       <label>対象
         <select id="placement-target" aria-label="配置の対象">
           <option value="selected">選択した図形</option>
-          <option value="region">矩形のみ</option>
+          <option value="region">矩形基準</option>
           <option value="marker">丸番号のみ</option>
           <option value="pair">矩形と丸番号の組</option>
         </select>
       </label>
-      <button type="button" data-align="left">左揃え</button>
-      <button type="button" data-align="center-x">左右中央</button>
-      <button type="button" data-align="right">右揃え</button>
-      <button type="button" data-align="top">上揃え</button>
-      <button type="button" data-align="center-y">上下中央</button>
-      <button type="button" data-align="bottom">下揃え</button>
-      <button type="button" data-distribute="horizontal" title="3つ以上の対象を横方向に等間隔で整列">左右に整列</button>
-      <button type="button" data-distribute="vertical" title="3つ以上の対象を縦方向に等間隔で整列">上下に整列</button>
+      ${iconButton("align_horizontal_left", "左揃え", 'data-align="left"')}
+      ${iconButton("align_horizontal_center", "左右中央", 'data-align="center-x"')}
+      ${iconButton("align_horizontal_right", "右揃え", 'data-align="right"')}
+      ${iconButton("align_vertical_top", "上揃え", 'data-align="top"')}
+      ${iconButton("align_vertical_center", "上下中央", 'data-align="center-y"')}
+      ${iconButton("align_vertical_bottom", "下揃え", 'data-align="bottom"')}
+      ${iconButton("horizontal_distribute", "左右に整列", 'data-distribute="horizontal"', "button", "左右に整列（3つ以上の対象）")}
+      ${iconButton("vertical_distribute", "上下に整列", 'data-distribute="vertical"', "button", "上下に整列（3つ以上の対象）")}
     </div>
     <div id="item-properties" hidden>
       <form id="geometry">
@@ -277,7 +283,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
           <label>高さ <input id="region-height" type="number" step="any"></label>
           <label>丸番号 X <input id="marker-x" type="number" step="any"></label>
           <label>丸番号 Y <input id="marker-y" type="number" step="any"></label>
-          <button type="submit">座標を適用</button>
+          ${iconButton("check", "座標を適用", "", "submit")}
         </fieldset>
         <div id="geometry-error" role="status" hidden></div>
       </form>
