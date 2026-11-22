@@ -286,12 +286,23 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
   </div>
   <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="画像と表の高さを調整" aria-valuemin="20" aria-valuemax="80" aria-valuenow="65" tabindex="0"></div>
   <section id="table-panel" aria-label="対応表">
+    <button type="button" id="renumber" disabled>一覧順に再付番…</button>
     <table>
-      <thead><tr><th scope="col">選択</th><th scope="col">番号</th><th scope="col">名称</th></tr></thead>
+      <thead><tr><th scope="col">選択</th><th scope="col">番号</th><th scope="col">名称</th><th scope="col">移動</th></tr></thead>
       <tbody id="rows"></tbody>
-      <tfoot id="empty"><tr><td colspan="3">「矩形を追加」を選び、画像上をドラッグします。</td></tr></tfoot>
+      <tfoot id="empty"><tr><td colspan="4">「矩形を追加」を選び、画像上をドラッグします。</td></tr></tfoot>
     </table>
   </section>
+  <dialog id="number-dialog" aria-labelledby="number-title">
+    <form id="number-form">
+      <h2 id="number-title">一覧順に再付番</h2>
+      <div id="number-preview">
+        <table><thead><tr><th>変更前</th><th>変更後</th><th>名称</th></tr></thead><tbody id="preview-rows"></tbody></table>
+      </div>
+      <p id="number-error" role="alert" hidden></p>
+      <div class="number-actions"><button id="number-cancel" type="button">取消</button><button id="number-apply" type="submit">確定</button></div>
+    </form>
+  </dialog>
 </main>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

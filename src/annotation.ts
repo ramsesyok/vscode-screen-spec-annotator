@@ -93,6 +93,9 @@ export type Edit =
   | { kind: "geometry"; changes: GeometryChange[] }
   | PlacementEdit
   | StyleEdit
+  | { kind: "number"; id: string; previousNumber: number; number: number }
+  | { kind: "renumber"; previewVersion: number }
+  | { kind: "moveRow"; id: string; target: string; side: "before" | "after"; previousOrder: string[] }
   | { kind: "name"; id: string; name: string; previousName?: string }
   | { kind: "remove"; ids: string[]; imageBasis?: string };
 
@@ -251,6 +254,7 @@ export function isEdit(value: unknown): value is Edit {
   if (value.origin !== undefined && typeof value.origin !== "string") return false;
   if (value.imageBasis !== undefined && typeof value.imageBasis !== "string") return false;
   if (value.kind === "add") return isRegion(value.region);
+  if (value.kind === "renumber") return isInteger(value.previewVersion, 1);
   if (value.kind === "remove" || value.kind === "markerPreset") {
     return isAnnotationIds(value.ids) &&
       (value.kind === "remove" || isMarkerAnchor(value.anchor));
@@ -282,6 +286,9 @@ export function isEdit(value: unknown): value is Edit {
   }
   if (!isItemId(value.id)) return false;
   switch (value.kind) {
+    case "number": return isInteger(value.number, 1) && isInteger(value.previousNumber, 1);
+    case "moveRow": return isItemId(value.target) && value.target !== value.id &&
+      (value.side === "before" || value.side === "after") && isAnnotationIds(value.previousOrder);
     case "region": return isRegion(value.region);
     case "moveRegion": return isPoint(value.position);
     case "marker": return isPoint(value.marker);
@@ -330,6 +337,16 @@ export function constrainMarker(point: Point, number: number, size: Size, diamet
 function markerAnchorPoint(region: Region, anchor: MarkerAnchor): Point {
   const [horizontal, vertical] = markerAnchors[anchor];
   return { x: region.x + region.width * horizontal, y: region.y + region.height * vertical };
+}
+
+function setItemNumber(data: AnnotationDocument, item: AnnotationItem, number: number): void {
+  const size = data.coordinateSize;
+  const diameter = effectiveMarkerDiameter(data.style, item);
+  if (markerRadius(number, size, diameter) > markerRadius(item.number, size, diameter)) {
+    item.marker = constrainMarker(item.marker, number, size, diameter);
+  }
+  item.number = number;
+  data.highestIssuedNumber = Math.max(data.highestIssuedNumber, number);
 }
 
 export function regionFits(region: Region, size: Size): boolean {
@@ -577,6 +594,10 @@ export function applyAnnotationEdit(
   if ((edit.kind === "add" || edit.kind === "region") && !regionFits(edit.region, size)) {
     throw new Error("矩形を画像の内側に収めてください。");
   }
+  if (edit.kind === "renumber") {
+    data.items.forEach((item, index) => setItemNumber(data, item, index + 1));
+    return;
+  }
   if (edit.kind === "align" || edit.kind === "distribute" || edit.kind === "geometry") {
     const items = new Map(data.items.map(item => [item.id, item]));
     if (edit.kind === "geometry") applyGeometryChanges(items, edit.changes, size, data.style);
@@ -627,6 +648,25 @@ export function applyAnnotationEdit(
   if (index < 0) throw new Error("対象の項目が見つかりません。");
   const item = data.items[index];
   switch (edit.kind) {
+    case "moveRow": {
+      const target = data.items.findIndex(other => other.id === edit.target);
+      if (target < 0 || data.items.length !== edit.previousOrder.length ||
+          data.items.some((other, i) => other.id !== edit.previousOrder[i])) {
+        throw new Error("行順が更新されました。最新の順序から操作し直してください。");
+      }
+      const insertion = target + (edit.side === "after" ? 1 : 0);
+      data.items.splice(index, 1);
+      data.items.splice(insertion > index ? insertion - 1 : insertion, 0, item);
+      break;
+    }
+    case "number":
+      if (item.number !== edit.previousNumber) throw new Error("番号が更新されました。最新の番号を確認してください。");
+      if (!isInteger(edit.number, 1)) throw new Error("1以上の整数を入力してください。");
+      if (data.items.some(other => other.id !== item.id && other.number === edit.number)) {
+        throw new Error(`${edit.number}番は使用中です。別の番号を入力してください。`);
+      }
+      setItemNumber(data, item, edit.number);
+      break;
     case "region":
       item.region = edit.region;
       break;
