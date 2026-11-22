@@ -61,6 +61,10 @@ VS Codeの拡張機能ビューのメニューで「VSIXからのインストー
 
 VSIXを作り直す場合は、Node.js 22以上で `npm ci` の後に `npm run package:vsix` を実行します。ライセンス情報は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
 
+## GitHub Releasesに公開する
+
+リリースするバージョンを `package.json` と `package-lock.json` に反映してデフォルトブランチにマージします。GitHubの **Actions → Release VSIX → Run workflow** でデフォルトブランチを選んで実行します。型チェックとテストが通ると、VSIXを作成し、実行対象のコミットに `v<バージョン>` タグを付けて、リリースノートとVSIXをGitHub Releasesに公開します。
+
 ## 実装状況
 
 原画像を相対パスで参照する注釈ファイルの作成・編集・保存、注釈付き PNG と対応表 CSV の出力に対応しています。共有列の設定、差し替え後の位置確認、Markdown の出力は後続の実装範囲です。
