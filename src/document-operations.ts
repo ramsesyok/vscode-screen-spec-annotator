@@ -4,7 +4,8 @@ import * as vscode from "vscode";
 import { applyAnnotationEdit, isAnnotationIds, isEdit, isMarkerAnchor, parseAnnotation, pasteAnnotations } from "./annotation";
 import type { AnnotationDocument, AnnotationItem } from "./annotation";
 import type { DocumentRequest, DocumentState, HostMessage } from "./protocol";
-import { checkExportImage, writeAnnotatedPng } from "./png-output";
+import { checkExportImage, writeAnnotatedPng, writeOutput } from "./annotation-output";
+import { metadataCsv } from "./metadata-csv";
 
 type Result = Extract<HostMessage, { type: "result" }>;
 export const styleSetting = "defaultStyle";
@@ -55,17 +56,23 @@ export class DocumentOperations {
     const state = readDocument(document);
     if (!state.data) throw new Error(state.error);
     if (state.version !== version) throw new Error("注釈が更新されました。最新の内容を確認してください。");
-    if (message.type === "preparePng") {
-      await checkExportImage(document.uri.fsPath, state.data);
+    if (message.type === "preparePng" || message.type === "exportCsv") {
+      const csv = message.type === "exportCsv";
+      if (!csv) await checkExportImage(document.uri.fsPath, state.data);
+      else if (!state.data.screenId.trim()) throw new Error("一覧出力の前に画面IDを入力してください。");
       if (document.isDirty) {
         const save = "保存して出力";
-        const choice = await vscode.window.showWarningMessage("PNGの出力前に注釈を保存しますか？", { modal: true }, save);
+        const choice = await vscode.window.showWarningMessage(`${csv ? "CSV" : "PNG"}の出力前に注釈を保存しますか？`, { modal: true }, save);
         if (choice !== save) return { type: "result", request, state: readDocument(document) };
         if (document.version !== version) throw new Error("注釈が更新されました。最新の状態で再出力してください。");
         if (!await document.save()) throw new Error("注釈ファイルを保存できませんでした。");
       }
       const saved = readDocument(document);
       if (!saved.data || document.isDirty) throw new Error("保存済みの注釈を取得できませんでした。");
+      if (csv) {
+        await writeOutput(document, saved.version, saved.data, "csv", Buffer.from(metadataCsv(saved.data)));
+        return { type: "result", request, state: readDocument(document) };
+      }
       return { type: "result", request, state: saved, exportPng: true };
     }
     if (message.type === "writePng") {

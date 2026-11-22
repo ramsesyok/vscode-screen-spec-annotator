@@ -1,7 +1,7 @@
 import type { Edit } from "../annotation";
 import type { EditorMessage } from "../protocol";
 
-export type QueuedOperation = { kind: "save" | "saveDefaultStyle" | "pasteRects" | "preparePng" } |
+export type QueuedOperation = { kind: "save" | "saveDefaultStyle" | "pasteRects" | "preparePng" | "exportCsv" } |
   { kind: "writePng"; sourceVersion: number; png: ArrayBuffer } |
   { kind: "copyRects"; ids: string[] } | { kind: "edit"; edit: Edit };
 
@@ -51,7 +51,7 @@ export class OperationQueue {
       const failedName = operation.kind === "edit" && operation.edit.kind === "name" ? operation.edit.id : undefined;
       for (let i = this.pending.length - 1; i >= 0; i--) {
         const waiting = this.pending[i];
-        if (waiting.kind === "save" || waiting.kind === "saveDefaultStyle" || waiting.kind === "preparePng" ||
+        if (waiting.kind === "save" || waiting.kind === "saveDefaultStyle" || waiting.kind === "preparePng" || waiting.kind === "exportCsv" ||
             (waiting.kind === "edit" && waiting.edit.kind === "name" && waiting.edit.id === failedName)) {
           this.pending.splice(i, 1);
         }

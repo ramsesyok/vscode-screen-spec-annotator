@@ -17,7 +17,7 @@ export type EditorMessage =
   | { type: "openJson" }
   | { type: "edit"; request: number; version: number; edit: Edit }
   | { type: "copyRects"; request: number; version: number; ids: string[] }
-  | { type: "save" | "saveDefaultStyle" | "pasteRects" | "preparePng"; request: number; version: number }
+  | { type: "save" | "saveDefaultStyle" | "pasteRects" | "preparePng" | "exportCsv"; request: number; version: number }
   | { type: "writePng"; request: number; version: number; sourceVersion: number; png: ArrayBuffer };
 
 export type HostMessage =
@@ -36,7 +36,7 @@ export type DocumentRequest = {
 } & (
   | { type: "edit"; edit?: unknown }
   | { type: "copyRects"; ids?: unknown }
-  | { type: "save" | "saveDefaultStyle" | "pasteRects" | "preparePng" }
+  | { type: "save" | "saveDefaultStyle" | "pasteRects" | "preparePng" | "exportCsv" }
   | { type: "writePng"; sourceVersion?: unknown; png?: unknown }
 );
 
@@ -44,7 +44,7 @@ export function isDocumentRequest(message: unknown): message is DocumentRequest 
   return typeof message === "object" && message !== null && "type" in message &&
     (message.type === "edit" || message.type === "save" || message.type === "saveDefaultStyle" ||
       message.type === "copyRects" || message.type === "pasteRects" ||
-      message.type === "preparePng" || message.type === "writePng") &&
+      message.type === "preparePng" || message.type === "writePng" || message.type === "exportCsv") &&
     "request" in message && Number.isSafeInteger(message.request) &&
     "version" in message && Number.isSafeInteger(message.version);
 }

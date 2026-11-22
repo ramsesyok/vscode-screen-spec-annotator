@@ -207,7 +207,16 @@ tr.selected { background: var(--vscode-list-inactiveSelectionBackground); }
   border: 1px solid var(--vscode-input-border, transparent);
 }
 #empty { color: var(--vscode-descriptionForeground); }
-#renumber { margin-bottom: 6px; }
+.table-toolbar, .table-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.table-toolbar { margin-bottom: 6px; }
+.table-actions { margin-inline-start: auto; }
+#screen-id {
+  width: 14ch;
+  padding: 4px 6px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+}
 #rows td:not(:nth-child(3)) { width: 1%; }
 #rows td:nth-child(2) { min-width: 6ch; }
 .row-handle { cursor: grab; background: transparent; color: inherit; font-size: 1.25em; line-height: 1; }

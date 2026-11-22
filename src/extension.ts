@@ -290,7 +290,13 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
   </div>
   <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="画像と表の高さを調整" aria-valuemin="20" aria-valuemax="80" aria-valuenow="65" tabindex="0"></div>
   <section id="table-panel" aria-label="対応表">
-    <button type="button" id="renumber" disabled>一覧順に再付番…</button>
+    <div class="table-toolbar">
+      <label>画面ID入力 <input id="screen-id" type="text" disabled></label>
+      <div class="table-actions">
+        <button type="button" id="renumber" disabled>一括再付番</button>
+        <button type="button" id="export-csv" disabled>一覧出力</button>
+      </div>
+    </div>
     <table>
       <thead><tr><th scope="col">選択</th><th scope="col">番号</th><th scope="col">名称</th><th scope="col">移動</th></tr></thead>
       <tbody id="rows"></tbody>
