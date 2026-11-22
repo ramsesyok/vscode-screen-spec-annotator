@@ -69,6 +69,7 @@ export interface AnnotationItem {
 }
 
 export interface AnnotationDocument {
+  screenId: string;
   version: 2;
   imagePath: string;
   confirmedImage: ImageIdentity;
@@ -95,6 +96,7 @@ export type Edit =
   | StyleEdit
   | { kind: "number"; id: string; previousNumber: number; number: number }
   | { kind: "renumber"; previewVersion: number }
+  | { kind: "screenId"; value: string; previous: string }
   | { kind: "moveRow"; id: string; target: string; side: "before" | "after"; previousOrder: string[] }
   | { kind: "name"; id: string; name: string; previousName?: string }
   | { kind: "remove"; ids: string[]; imageBasis?: string };
@@ -221,7 +223,9 @@ export function parseAnnotation(text: string): AnnotationDocument {
     ids.add(item.id);
     numbers.add(item.number);
   }
-  return { ...value, version: 2, imagePath, confirmedImage, coordinateSize,
+  const screenId = value.screenId === undefined ? "" : value.screenId;
+  if (typeof screenId !== "string" || /[\r\n]/.test(screenId)) throw new Error("画面IDは1行の文字列で指定してください。");
+  return { ...value, version: 2, screenId, imagePath, confirmedImage, coordinateSize,
     coordinateReviewPending, highestIssuedNumber, style: { ...style, color: style.color, lineStyle: style.lineStyle }, items };
 }
 
@@ -244,6 +248,7 @@ export function newAnnotation(imagePath: string, image: ImageIdentity, defaults?
     coordinateSize: { width: image.width, height: image.height },
     coordinateReviewPending: false,
     highestIssuedNumber: 0,
+    screenId: "",
     style,
     items: [],
   };
@@ -255,6 +260,8 @@ export function isEdit(value: unknown): value is Edit {
   if (value.imageBasis !== undefined && typeof value.imageBasis !== "string") return false;
   if (value.kind === "add") return isRegion(value.region);
   if (value.kind === "renumber") return isInteger(value.previewVersion, 1);
+  if (value.kind === "screenId") return typeof value.value === "string" && !/[\r\n]/.test(value.value) &&
+    typeof value.previous === "string";
   if (value.kind === "remove" || value.kind === "markerPreset") {
     return isAnnotationIds(value.ids) &&
       (value.kind === "remove" || isMarkerAnchor(value.anchor));
@@ -596,6 +603,11 @@ export function applyAnnotationEdit(
   }
   if (edit.kind === "renumber") {
     data.items.forEach((item, index) => setItemNumber(data, item, index + 1));
+    return;
+  }
+  if (edit.kind === "screenId") {
+    if (data.screenId !== edit.previous) throw new Error("画面IDが更新されました。最新の値を確認してください。");
+    data.screenId = edit.value;
     return;
   }
   if (edit.kind === "align" || edit.kind === "distribute" || edit.kind === "geometry") {

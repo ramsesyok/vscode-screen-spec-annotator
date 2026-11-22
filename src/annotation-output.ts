@@ -35,13 +35,18 @@ export async function writeAnnotatedPng(
   if (type !== "png" || width !== data.coordinateSize.width || height !== data.coordinateSize.height) {
     throw new Error("PNGの形式または寸法が正しくありません。");
   }
+  await writeOutput(document, version, data, "png", bytes);
+}
+
+export async function writeOutput(document: vscode.TextDocument, version: number, data: AnnotationDocument,
+  format: "png" | "csv", bytes: Uint8Array): Promise<void> {
   const path = document.uri.fsPath;
   const folder = join(dirname(path), "output");
-  const name = basename(path).replace(/\.annotations\.json$/i, "") + ".annotated.png";
+  const name = basename(path).replace(/\.annotations\.json$/i, "") + (format === "png" ? ".annotated.png" : ".csv");
   const destination = join(folder, name);
   const existing = await outputFileState(destination);
   if (existing !== undefined) {
-    if (await realpath(destination) === await realpath(resolveImagePath(path, data.imagePath))) {
+    if (format === "png" && await realpath(destination) === await realpath(resolveImagePath(path, data.imagePath))) {
       throw new Error("出力先は参照中の原画像です。原画像を上書きできません。");
     }
     const overwrite = "上書き";
@@ -49,7 +54,7 @@ export async function writeAnnotatedPng(
     if (choice !== overwrite) return;
   }
   await mkdir(folder, { recursive: true });
-  const temporary = join(folder, `.${randomUUID()}.png.tmp`);
+  const temporary = join(folder, `.${randomUUID()}.${format}.tmp`);
   const file = await open(temporary, "wx");
   try {
     try {
@@ -57,7 +62,7 @@ export async function writeAnnotatedPng(
     } finally {
       await file.close();
     }
-    await checkExportImage(path, data);
+    if (format === "png") await checkExportImage(path, data);
     const current = await outputFileState(destination);
     if (document.version !== version || document.isDirty || current !== existing) {
       throw new Error("注釈または出力先が更新されました。最新の状態で再出力してください。");
@@ -69,8 +74,8 @@ export async function writeAnnotatedPng(
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     });
   }
-  const openImage = "画像を開く";
-  void vscode.window.showInformationMessage(`PNGを出力しました。 output/${name}`, openImage).then(choice => {
-    if (choice === openImage) return vscode.commands.executeCommand("vscode.open", vscode.Uri.file(destination));
+  const openLabel = format === "png" ? "画像を開く" : "CSVを開く";
+  void vscode.window.showInformationMessage(`${format.toUpperCase()}を出力しました。 output/${name}`, openLabel).then(choice => {
+    if (choice === openLabel) return vscode.commands.executeCommand("vscode.open", vscode.Uri.file(destination));
   });
 }

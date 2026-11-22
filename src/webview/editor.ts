@@ -28,6 +28,9 @@ const exportPngButton = element<HTMLButtonElement>("export-png");
 const annotations = element<SVGSVGElement>("annotations");
 const rows = element<HTMLTableSectionElement>("rows");
 const renumberButton = element<HTMLButtonElement>("renumber");
+const screenIdInput = element<HTMLInputElement>("screen-id");
+const exportCsvButton = element<HTMLButtonElement>("export-csv");
+let screenIdDraftBase: string | undefined;
 const numberDialog = element<HTMLDialogElement>("number-dialog");
 const numberError = element<HTMLElement>("number-error");
 const notice = element<HTMLElement>("notice");
@@ -174,6 +177,10 @@ window.addEventListener("message", event => {
     case "result":
       const operation = queue.complete(message.request, !!message.error);
       if (!operation) return;
+      if (operation.kind === "edit" && operation.edit.kind === "screenId") {
+        screenIdInput.readOnly = false;
+        screenIdDraftBase = message.error ? message.state.data?.screenId : undefined;
+      }
       if (operation.kind === "edit" && operation.edit.kind === "number" && inlineNumber?.id === operation.edit.id) {
         if (message.error) {
           inlineNumber.input.readOnly = false;
@@ -283,6 +290,8 @@ function renderNotice(): void {
 }
 
 function render(): void {
+  screenIdInput.disabled = exportCsvButton.disabled = !state?.data;
+  if (screenIdDraftBase === undefined) screenIdInput.value = state?.data?.screenId ?? "";
   renderNotice();
   renderAnnotations();
   renderRows();
@@ -1264,12 +1273,39 @@ function pasteRectangles(): void {
 }
 
 function commitDocumentInputs(): boolean {
+  commitScreenId();
   if (!commitInlineNumber(true)) {
     inlineNumber?.input.focus();
     return false;
   }
   return numericStyleFields.every(({ input, property }) => commitStyleNumber(input, property)) && applyGeometry();
 }
+
+function commitScreenId(): void {
+  if (screenIdDraftBase === undefined || screenIdInput.readOnly) return;
+  if (screenIdDraftBase === screenIdInput.value) {
+    screenIdDraftBase = undefined;
+    screenIdInput.value = state?.data?.screenId ?? "";
+    return;
+  }
+  screenIdInput.readOnly = true;
+  enqueue({ kind: "edit", edit: { kind: "screenId", previous: screenIdDraftBase, value: screenIdInput.value } });
+}
+
+screenIdInput.addEventListener("input", () => { screenIdDraftBase ??= state?.data?.screenId; });
+screenIdInput.addEventListener("blur", commitScreenId);
+screenIdInput.addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.isComposing) commitScreenId();
+});
+exportCsvButton.addEventListener("click", () => {
+  if (!screenIdInput.value.trim()) {
+    editError = "一覧出力の前に画面IDを入力してください。";
+    renderNotice();
+    screenIdInput.focus();
+    return;
+  }
+  if (commitDocumentInputs()) enqueue({ kind: "exportCsv" });
+});
 
 exportPngButton.addEventListener("click", () => {
   if (commitDocumentInputs()) enqueue({ kind: "preparePng" });

@@ -1,5 +1,6 @@
 """Exercise the bundled custom editor in an isolated desktop VS Code instance."""
 import base64
+import csv
 import hashlib
 import json
 import os
@@ -188,7 +189,7 @@ def exercise_numbering(panel, file):
     expect(rows.first.locator(".row-number")).to_be_focused()
     names.last.press("Tab")
     expect(rows.last.locator(".row-handle")).to_be_focused()
-    bulk = panel.get_by_role("button", name="一覧順に再付番…")
+    bulk = panel.get_by_role("button", name="一括再付番")
     bulk.click()
     expect(panel.locator("#preview-rows tr").first.locator("td")).to_have_text(["2", "1", "次へ"])
     panel.get_by_role("button", name="取消", exact=True).click()
@@ -207,6 +208,20 @@ def exercise_numbering(panel, file):
         except (json.JSONDecodeError, PermissionError, FileNotFoundError):
             return False
     wait_for(saved_order, "row order and numbers on disk")
+    screen_id = panel.get_by_label("画面ID入力")
+    expect(screen_id).to_have_value("")
+    screen_id.fill('S001,"検索"')
+    screen_id.press("Meta+s" if sys.platform == "darwin" else "Control+s")
+    wait_for(lambda: json.loads(file.read_text(encoding="utf-8-sig")).get("screenId") == 'S001,"検索"',
+             "screen ID on disk")
+    panel.get_by_role("button", name="一覧出力").click()
+    output = file.parent / "output" / "sample.csv"
+    wait_for(output.is_file, "metadata CSV")
+    with output.open(encoding="utf-8-sig", newline="") as stream:
+        assert list(csv.reader(stream)) == [
+            ["画面ID", "項目ID", "表示番号", "名称"],
+            ['S001,"検索"', "second", "1", "次へ"], ['S001,"検索"', "sample", "2", "final"],
+        ]
 
 
 def run(directory, executable):
@@ -246,6 +261,7 @@ def run(directory, executable):
             names = panel.locator('body:not([data-original-panel]) #rows input[type="text"]')
             expect(names.nth(0)).to_have_value("次へ")
             expect(names.nth(1)).to_have_value("final")
+            expect(panel.get_by_label("画面ID入力")).to_have_value('S001,"検索"')
             expect(panel.locator("#rows .row-number span")).to_have_text(["1", "2"])
     finally:
         (directory / "finished").touch()
