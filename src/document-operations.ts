@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { applyAnnotationEdit, isAnnotationIds, isEdit, isMarkerAnchor, parseAnnotation, pasteAnnotations } from "./annotation";
 import type { AnnotationDocument, AnnotationItem } from "./annotation";
 import type { DocumentRequest, DocumentState, HostMessage } from "./protocol";
+import { checkExportImage, writeAnnotatedPng } from "./png-output";
 
 type Result = Extract<HostMessage, { type: "result" }>;
 export const styleSetting = "defaultStyle";
@@ -54,6 +55,26 @@ export class DocumentOperations {
     const state = readDocument(document);
     if (!state.data) throw new Error(state.error);
     if (state.version !== version) throw new Error("注釈が更新されました。最新の内容を確認してください。");
+    if (message.type === "preparePng") {
+      await checkExportImage(document.uri.fsPath, state.data);
+      if (document.isDirty) {
+        const save = "保存して出力";
+        const choice = await vscode.window.showWarningMessage("PNGの出力前に注釈を保存しますか？", { modal: true }, save);
+        if (choice !== save) return { type: "result", request, state: readDocument(document) };
+        if (document.version !== version) throw new Error("注釈が更新されました。最新の状態で再出力してください。");
+        if (!await document.save()) throw new Error("注釈ファイルを保存できませんでした。");
+      }
+      const saved = readDocument(document);
+      if (!saved.data || document.isDirty) throw new Error("保存済みの注釈を取得できませんでした。");
+      return { type: "result", request, state: saved, exportPng: true };
+    }
+    if (message.type === "writePng") {
+      if (message.sourceVersion !== state.version || document.isDirty) {
+        throw new Error("注釈が更新されました。最新の状態で再出力してください。");
+      }
+      await writeAnnotatedPng(document, version, state.data, message.png);
+      return { type: "result", request, state: readDocument(document) };
+    }
     if (message.type === "saveDefaultStyle") {
       await vscode.workspace.getConfiguration("screenSpecAnnotator")
         .update(styleSetting, state.data.style, vscode.ConfigurationTarget.Global);

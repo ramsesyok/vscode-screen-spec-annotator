@@ -1,7 +1,8 @@
 import type { Edit } from "../annotation";
 import type { EditorMessage } from "../protocol";
 
-export type QueuedOperation = { kind: "save" | "saveDefaultStyle" | "pasteRects" } |
+export type QueuedOperation = { kind: "save" | "saveDefaultStyle" | "pasteRects" | "preparePng" } |
+  { kind: "writePng"; sourceVersion: number; png: ArrayBuffer } |
   { kind: "copyRects"; ids: string[] } | { kind: "edit"; edit: Edit };
 
 export class OperationQueue {
@@ -35,6 +36,8 @@ export class OperationQueue {
       this.send({ type: "edit", request, version, edit: operation.edit });
     } else if (operation.kind === "copyRects") {
       this.send({ type: operation.kind, request, version, ids: operation.ids });
+    } else if (operation.kind === "writePng") {
+      this.send({ type: operation.kind, request, version, sourceVersion: operation.sourceVersion, png: operation.png });
     } else {
       this.send({ type: operation.kind, request, version });
     }
@@ -48,7 +51,7 @@ export class OperationQueue {
       const failedName = operation.kind === "edit" && operation.edit.kind === "name" ? operation.edit.id : undefined;
       for (let i = this.pending.length - 1; i >= 0; i--) {
         const waiting = this.pending[i];
-        if (waiting.kind === "save" || waiting.kind === "saveDefaultStyle" ||
+        if (waiting.kind === "save" || waiting.kind === "saveDefaultStyle" || waiting.kind === "preparePng" ||
             (waiting.kind === "edit" && waiting.edit.kind === "name" && waiting.edit.id === failedName)) {
           this.pending.splice(i, 1);
         }

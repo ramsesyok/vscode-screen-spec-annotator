@@ -8,7 +8,7 @@ body {
 }
 [hidden] { display: none !important; }
 button, textarea, input, select { font: inherit; }
-button {
+button, #marker-position {
   padding: 4px 9px;
   border: 1px solid var(--vscode-button-border, transparent);
   border-radius: 2px;
@@ -16,12 +16,12 @@ button {
   color: var(--vscode-button-secondaryForeground);
   cursor: pointer;
 }
-button:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+button:hover:not(:disabled), #marker-position:hover:enabled { background: var(--vscode-button-secondaryHoverBackground); }
 button[aria-pressed="true"], button[aria-expanded="true"] {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
 }
-button:disabled { opacity: .55; cursor: default; }
+button:disabled, .marker-position-picker:has(> select:disabled) { opacity: .55; cursor: default; }
 :focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
 .icon-button {
   display: inline-flex;
@@ -149,7 +149,7 @@ rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
 .property-grid label { display: grid; gap: 3px; }
 .property-grid label.inline-control { grid-column: 1 / -1; display: flex; align-items: center; }
 .property-grid > .icon-button { grid-column: 2; justify-self: end; }
-.properties input[type="number"], .properties select, #marker-position {
+.properties input[type="number"], .properties select {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -159,7 +159,35 @@ rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
 }
-#marker-position { width: auto; max-width: 100%; min-height: 32px; }
+.marker-position-picker { position: relative; display: inline-flex; color: var(--vscode-button-secondaryForeground); }
+.marker-position-picker > .material-icon { position: absolute; inset: 6px auto auto 5px; }
+.marker-position-picker::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  right: 7px;
+  width: 5px;
+  height: 5px;
+  border: solid currentColor;
+  border-width: 0 1px 1px 0;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+#marker-position {
+  appearance: none;
+  width: 42px;
+  height: 32px;
+  padding: 0;
+  color: transparent;
+}
+#marker-position:disabled { cursor: default; }
+#marker-position option { color: var(--vscode-input-foreground); background: var(--vscode-input-background); }
+@media (forced-colors: active) {
+  #marker-position, #marker-position:hover:enabled { forced-color-adjust: none; background: ButtonFace; border-color: ButtonText; }
+  #marker-position:disabled { border-color: GrayText; }
+  .marker-position-picker { color: ButtonText; }
+  .marker-position-picker:has(> select:disabled) { color: GrayText; }
+}
 .properties input[type="color"] { width: 2.8em; min-height: 28px; }
 #geometry-error { margin: 0 0 8px; color: var(--vscode-errorForeground); }
 table { border-collapse: collapse; width: 100%; }
