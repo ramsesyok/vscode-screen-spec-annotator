@@ -45,9 +45,9 @@ def wait_for(read, description, timeout=15):
 
 
 def exercise(page, panel, file):
-    name = panel.locator("#rows textarea")
+    name = panel.locator('#rows input[type="text"]').first
     rect = panel.locator("rect[data-drag=move]")
-    expect(rect).to_be_visible()
+    expect(rect).to_be_visible(timeout=30000)
     save_key = "Meta+s" if sys.platform == "darwin" else "Control+s"
 
     def saved_as(value):
@@ -63,7 +63,7 @@ def exercise(page, panel, file):
     item = data["items"][0]
 
     # An external move during pointer capture must survive the subsequent drop.
-    box = rect.bounding_box()
+    box = wait_for(rect.bounding_box, "rectangle after the save response")
     x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
     page.mouse.move(x, y)
     page.mouse.down()
@@ -100,6 +100,8 @@ def exercise(page, panel, file):
 
     panel.locator("#region-x").fill("90")
     data["coordinateSize"]["width"] = 300
+    data["items"].append({**item, "id": "second", "name": "次へ", "number": 2})
+    data["highestIssuedNumber"] = 2
     file.write_text(json.dumps(data), encoding="utf-8")
     name.focus()
     expect(panel.locator("#notice")).to_contain_text("基準寸法")
@@ -112,6 +114,65 @@ def exercise(page, panel, file):
     wait_for(lambda: saved_as("final"), "name saved while geometry is locked")
     persisted = json.loads(file.read_text(encoding="utf-8-sig"))["items"][0]
     assert (persisted["region"]["x"], persisted["marker"]["x"]) == (80, 125)
+
+
+def exercise_numbering(panel, file):
+    labels = panel.locator("#rows .row-number span")
+    expect(labels).to_have_text(["1", "2"])
+    first_number = panel.locator("#rows .row-number").first
+    first_number.click()
+    expect(first_number).to_have_attribute("aria-pressed", "true")
+    first_number.dblclick()
+    number = panel.get_by_role("spinbutton", name="1番の新しい番号")
+    expect(panel.locator("dialog")).not_to_be_visible()
+    number.fill("11")
+    number.press("Escape")
+    expect(first_number).to_be_focused()
+    expect(labels).to_have_text(["1", "2"])
+    first_number.dblclick()
+    number.fill("2")
+    number.press("Enter")
+    expect(panel.locator(".inline-number-error")).to_contain_text("使用中")
+    number.fill("10")
+    number.press("Enter")
+    expect(labels).to_have_text(["10", "2"])
+    first_number.press("F2")
+    updated = panel.get_by_role("spinbutton", name="10番の新しい番号")
+    updated.fill("12")
+    updated.press("Tab")
+    expect(labels).to_have_text(["12", "2"])
+    expect(panel.locator("g[data-id=sample] text")).to_have_text("12")
+    rows = panel.locator("#rows tr")
+    rows.nth(1).locator("td:last-child .row-handle").drag_to(rows.first, target_position={"x": 12, "y": 3})
+    expect(labels).to_have_text(["2", "12"])
+    names = rows.locator(".row-name")
+    names.first.press("Tab")
+    expect(names.last).to_be_focused()
+    names.last.press("Shift+Tab")
+    expect(names.first).to_be_focused()
+    names.first.press("Shift+Tab")
+    expect(rows.first.locator(".row-number")).to_be_focused()
+    names.last.press("Tab")
+    expect(rows.last.locator(".row-handle")).to_be_focused()
+    bulk = panel.get_by_role("button", name="一覧順に再付番…")
+    bulk.click()
+    expect(panel.locator("#preview-rows tr").first.locator("td")).to_have_text(["2", "1", "次へ"])
+    panel.get_by_role("button", name="取消", exact=True).click()
+    expect(labels).to_have_text(["2", "12"])
+    bulk.click()
+    panel.get_by_role("button", name="確定", exact=True).click()
+    expect(labels).to_have_text(["1", "2"])
+    expect(panel.locator("g[data-id=sample] text")).to_have_text("2")
+    panel.locator('#rows input[type="text"]').first.press("Meta+s" if sys.platform == "darwin" else "Control+s")
+
+    def saved_order():
+        try:
+            saved = json.loads(file.read_text(encoding="utf-8-sig"))
+            return (saved["highestIssuedNumber"] == 12 and
+                    [(row["id"], row["number"]) for row in saved["items"]] == [("second", 1), ("sample", 2)])
+        except (json.JSONDecodeError, PermissionError, FileNotFoundError):
+            return False
+    wait_for(saved_order, "row order and numbers on disk")
 
 
 def run(directory, executable):
@@ -145,9 +206,13 @@ def run(directory, executable):
             (directory / "connected").touch()
             panel = page.frame_locator("iframe.webview").frame_locator("#active-frame")
             exercise(page, panel, file)
+            exercise_numbering(panel, file)
             panel.locator("body").evaluate("body => body.dataset.originalPanel = 'yes'")
             (directory / "reopen").touch()
-            expect(panel.locator("body:not([data-original-panel]) #rows textarea")).to_have_value("final")
+            names = panel.locator('body:not([data-original-panel]) #rows input[type="text"]')
+            expect(names.nth(0)).to_have_value("次へ")
+            expect(names.nth(1)).to_have_value("final")
+            expect(panel.locator("#rows .row-number span")).to_have_text(["1", "2"])
     finally:
         (directory / "finished").touch()
         try:

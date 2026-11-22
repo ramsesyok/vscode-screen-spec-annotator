@@ -166,17 +166,47 @@ table { border-collapse: collapse; width: 100%; }
 th, td { border-bottom: 1px solid var(--vscode-panel-border); padding: 5px; text-align: left; }
 th:nth-child(-n+2) { width: 5ch; white-space: nowrap; }
 tr.selected { background: var(--vscode-list-inactiveSelectionBackground); }
-textarea {
+.row-name {
   display: block;
   box-sizing: border-box;
   width: 100%;
   min-width: 100px;
   min-height: 28px;
   line-height: 1.4;
-  resize: vertical;
   padding: 4px 6px;
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
 }
 #empty { color: var(--vscode-descriptionForeground); }
+#renumber { margin-bottom: 6px; }
+#rows td:not(:nth-child(3)) { width: 1%; }
+#rows td:nth-child(2) { min-width: 6ch; }
+.row-handle { cursor: grab; background: transparent; color: inherit; font-size: 1.25em; line-height: 1; }
+.row-handle:active { cursor: grabbing; }
+#rows tr[data-drop-side="before"] > td { box-shadow: inset 0 2px var(--vscode-focusBorder); }
+#rows tr[data-drop-side="after"] > td { box-shadow: inset 0 -2px var(--vscode-focusBorder); }
+#number-dialog {
+  box-sizing: border-box;
+  width: min(28rem, 94vw);
+  padding: 16px;
+  border: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-foreground);
+}
+#number-dialog::backdrop { background: rgb(0 0 0 / .4); }
+#number-title { margin: 0 0 12px; font-size: 1.1em; }
+.inline-number {
+  width: 8ch;
+  padding: 4px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+}
+#number-preview { max-height: 48vh; overflow: auto; }
+#number-preview th { position: sticky; top: 0; background: var(--vscode-editor-background); }
+#number-preview td:last-child { white-space: pre-wrap; overflow-wrap: anywhere; }
+#number-error, .inline-number-error { color: var(--vscode-errorForeground); }
+.inline-number-error { min-width: 12ch; margin-top: 3px; }
+.number-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+#number-apply { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }

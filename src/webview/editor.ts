@@ -25,6 +25,9 @@ const surface = element<HTMLElement>("surface");
 const canvas = element<HTMLCanvasElement>("original");
 const annotations = element<SVGSVGElement>("annotations");
 const rows = element<HTMLTableSectionElement>("rows");
+const renumberButton = element<HTMLButtonElement>("renumber");
+const numberDialog = element<HTMLDialogElement>("number-dialog");
+const numberError = element<HTMLElement>("number-error");
 const notice = element<HTMLElement>("notice");
 const empty = element<HTMLElement>("empty");
 const splitter = element<HTMLElement>("splitter");
@@ -169,6 +172,14 @@ window.addEventListener("message", event => {
     case "result":
       const operation = queue.complete(message.request, !!message.error);
       if (!operation) return;
+      if (operation.kind === "edit" && operation.edit.kind === "number" && inlineNumber?.id === operation.edit.id) {
+        if (message.error) {
+          inlineNumber.input.readOnly = false;
+          showNumberError(inlineNumber, message.error);
+        } else {
+          closeInlineNumber(document.activeElement === inlineNumber.input);
+        }
+      }
       if (message.error) {
         editError = message.error;
         if (operation.kind === "edit" && operation.edit.kind === "name") {
@@ -186,6 +197,10 @@ window.addEventListener("message", event => {
       }
       if (state && message.state.version < state.version) render();
       else applyState(message.state);
+      if (previewAfterNumber && operation.kind === "edit" && operation.edit.kind === "number") {
+        previewAfterNumber = false;
+        if (!message.error && !renumberButton.disabled) openNumberPreview();
+      }
       queue.sendNext(state?.version);
       break;
   }
@@ -271,13 +286,215 @@ interface RowControls {
   checkbox: HTMLInputElement;
   number: HTMLButtonElement;
   numberLabel: HTMLSpanElement;
-  name: HTMLTextAreaElement;
+  handle: HTMLButtonElement;
+  name: HTMLInputElement;
   previousName: string;
   conflict: HTMLElement;
   latest: HTMLElement;
   composing: boolean;
 }
 const rowElements = new Map<string, RowControls>();
+
+let previewVersion: number | undefined;
+let previewAfterNumber = false;
+
+renumberButton.addEventListener("click", () => {
+  if (!commitInlineNumber()) {
+    inlineNumber?.input.focus();
+    return;
+  }
+  if (inlineNumber?.input.readOnly) previewAfterNumber = true;
+  else openNumberPreview();
+});
+
+function openNumberPreview(): void {
+  if (!state?.data) return;
+  previewVersion = state.version;
+  const previewRows = element<HTMLTableSectionElement>("preview-rows");
+  previewRows.replaceChildren();
+  numberError.hidden = true;
+  state.data.items.forEach((entry, index) => {
+    const row = previewRows.insertRow();
+    row.insertCell().textContent = String(entry.number);
+    row.insertCell().textContent = String(index + 1);
+    row.insertCell().textContent = entry.name;
+  });
+  numberDialog.showModal();
+  element<HTMLElement>("number-cancel").focus();
+}
+element("number-cancel").addEventListener("click", () => numberDialog.close());
+element("number-form").addEventListener("submit", event => {
+  event.preventDefault();
+  if (!state?.data || previewVersion === undefined) return;
+  if (state.version !== previewVersion) {
+    numberError.textContent = "注釈が更新されました。取消を選び、最新の一覧から再付番してください。";
+    numberError.hidden = false;
+    return;
+  }
+  enqueue({ kind: "edit", edit: { kind: "renumber", previewVersion } });
+  numberDialog.close();
+});
+
+type InlineNumber = {
+  id: string; previousNumber: number; button: HTMLButtonElement; input: HTMLInputElement; error: HTMLDivElement;
+};
+let inlineNumber: InlineNumber | undefined;
+
+function closeInlineNumber(restoreFocus = false): void {
+  if (!inlineNumber) return;
+  const { button, input, error } = inlineNumber;
+  inlineNumber = undefined;
+  button.hidden = false;
+  input.remove();
+  error.remove();
+  if (restoreFocus) button.focus();
+}
+
+function showNumberError(editor: InlineNumber, message: string): void {
+  editor.error.textContent = message;
+  editor.error.hidden = false;
+  editor.input.setAttribute("aria-invalid", "true");
+}
+
+function commitInlineNumber(restoreFocus = false): boolean {
+  if (!inlineNumber || inlineNumber.input.readOnly) return true;
+  const { id, previousNumber, input } = inlineNumber;
+  const number = input.valueAsNumber;
+  const items = state?.data?.items ?? [];
+  if (!Number.isSafeInteger(number) || number < 1) {
+    showNumberError(inlineNumber, "1以上の整数を入力してください。");
+    return false;
+  }
+  if (items.find(item => item.id === id)?.number !== previousNumber) {
+    showNumberError(inlineNumber, "番号が更新されました。Escで最新の番号に戻れます。");
+    return false;
+  }
+  if (items.some(item => item.id !== id && item.number === number)) {
+    showNumberError(inlineNumber, `${number}番は使用中です。別の番号を入力してください。`);
+    return false;
+  }
+  if (number === previousNumber) closeInlineNumber(restoreFocus);
+  else {
+    input.readOnly = true;
+    enqueue({ kind: "edit", edit: { kind: "number", id, previousNumber, number } });
+  }
+  return true;
+}
+
+function editInlineNumber(id: string, button: HTMLButtonElement): void {
+  if (inlineNumber) {
+    if (!commitInlineNumber()) inlineNumber.input.focus();
+    if (inlineNumber) return;
+  }
+  const item = state?.data?.items.find(entry => entry.id === id);
+  if (!item) return;
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "1";
+  input.step = "1";
+  input.value = String(item.number);
+  input.className = "inline-number";
+  input.setAttribute("aria-label", `${item.number}番の新しい番号`);
+  const error = document.createElement("div");
+  error.className = "inline-number-error";
+  error.id = `number-error-${id}`;
+  error.hidden = true;
+  error.setAttribute("role", "alert");
+  input.setAttribute("aria-describedby", error.id);
+  inlineNumber = { id, previousNumber: item.number, input, button, error };
+  button.hidden = true;
+  button.after(input, error);
+  input.addEventListener("input", () => {
+    error.hidden = true;
+    input.removeAttribute("aria-invalid");
+  });
+  input.addEventListener("blur", () => {
+    if (inlineNumber?.input === input) commitInlineNumber();
+  });
+  input.addEventListener("keydown", event => {
+    if (event.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitInlineNumber(true);
+    } else if (event.key === "Escape" && !input.readOnly) {
+      event.preventDefault();
+      closeInlineNumber(true);
+    }
+  });
+  input.focus();
+  input.select();
+}
+
+type RowDrag = { id: string; previousOrder: string[] };
+let rowDrag: RowDrag | undefined;
+let dropRow: HTMLTableRowElement | undefined;
+
+function clearDropRow(): void {
+  if (dropRow) delete dropRow.dataset.dropSide;
+  dropRow = undefined;
+}
+
+function dropTarget(event: DragEvent) {
+  const row = event.target instanceof Element ? event.target.closest("tr") : null;
+  const id = row?.dataset.itemId;
+  if (!row || !id || !rowDrag || id === rowDrag.id) return;
+  const bounds = row.getBoundingClientRect();
+  const side = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+  return { row, id, side } as const;
+}
+
+rows.addEventListener("dragover", event => {
+  if (!rowDrag) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const target = dropTarget(event);
+  clearDropRow();
+  if (!target || !event.dataTransfer) return;
+  event.dataTransfer.dropEffect = "move";
+  dropRow = target.row;
+  dropRow.dataset.dropSide = target.side;
+});
+rows.addEventListener("dragleave", event => {
+  if (!(event.relatedTarget instanceof Node) || !rows.contains(event.relatedTarget)) clearDropRow();
+});
+rows.addEventListener("drop", event => {
+  if (!rowDrag) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const target = dropTarget(event);
+  if (target) enqueue({ kind: "edit", edit: { kind: "moveRow", ...rowDrag, target: target.id, side: target.side } });
+  rowDrag = undefined;
+  clearDropRow();
+});
+
+function rowHandle(id: string): HTMLButtonElement {
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "row-handle";
+  handle.textContent = "⠿";
+  handle.draggable = true;
+  handle.addEventListener("dragstart", event => {
+    if (!state?.data || !event.dataTransfer) { event.preventDefault(); return; }
+    rowDrag = { id, previousOrder: state.data.items.map(item => item.id) };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-annotation-row", id);
+    const row = handle.closest("tr");
+    if (row) event.dataTransfer.setDragImage(row, 12, row.clientHeight / 2);
+  });
+  handle.addEventListener("dragend", () => {
+    rowDrag = undefined;
+    clearDropRow();
+  });
+  handle.addEventListener("keydown", event => {
+    if (!state?.data || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+    event.preventDefault();
+    const previousOrder = state.data.items.map(item => item.id);
+    const up = event.key === "ArrowUp";
+    const target = previousOrder[previousOrder.indexOf(id) + (up ? -1 : 1)];
+    if (target) enqueue({ kind: "edit", edit: { kind: "moveRow", id, target, side: up ? "before" : "after", previousOrder } });
+  });
+  return handle;
+}
 
 function renderRowSelection(id: string, controls: RowControls): void {
   const selected = hasSelectedShape(id);
@@ -290,10 +507,12 @@ function renderRowSelection(id: string, controls: RowControls): void {
 
 function renderRows(): void {
   const items = state?.data?.items ?? [];
+  renumberButton.disabled = !items.some((item, index) => item.number !== index + 1);
   const editingNames = new Set(queue.queuedEdits().flatMap(edit => edit.kind === "name" ? [edit.id] : []));
   const visibleIds = new Set(items.map(item => item.id));
   for (const [id, controls] of rowElements) {
     if (!visibleIds.has(id)) {
+      if (inlineNumber?.id === id) closeInlineNumber();
       controls.row.remove();
       rowElements.delete(id);
     }
@@ -302,6 +521,8 @@ function renderRows(): void {
     let controls = rowElements.get(item.id);
     if (!controls) {
       const row = rows.insertRow();
+      row.dataset.itemId = item.id;
+      const handle = rowHandle(item.id);
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.addEventListener("change", () => select(item.id, "pair", true));
@@ -313,10 +534,26 @@ function renderRows(): void {
       const numberLabel = document.createElement("span");
       number.append(numberLabel);
       number.addEventListener("click", event => select(item.id, "pair", event.ctrlKey || event.metaKey || event.shiftKey));
+      number.addEventListener("dblclick", () => editInlineNumber(item.id, number));
+      number.addEventListener("keydown", event => {
+        if (event.key !== "F2" && event.key !== "Enter") return;
+        event.preventDefault();
+        editInlineNumber(item.id, number);
+      });
       row.insertCell().append(number);
-      const name = document.createElement("textarea");
-      name.rows = 1;
+      const name = document.createElement("input");
+      name.type = "text";
+      name.className = "row-name";
       name.addEventListener("focus", () => select(item.id));
+      name.addEventListener("keydown", event => {
+        if (event.key !== "Tab" || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+        const neighbor = event.shiftKey ? row.previousElementSibling : row.nextElementSibling;
+        const nextName = neighbor?.querySelector<HTMLInputElement>(".row-name");
+        if (nextName) {
+          event.preventDefault();
+          nextName.focus();
+        }
+      });
       const conflict = document.createElement("div");
       conflict.hidden = true;
       const latest = document.createElement("div");
@@ -325,7 +562,8 @@ function renderRows(): void {
       const discard = document.createElement("button");
       discard.textContent = "最新の名称を使う";
       conflict.append(latest, retry, discard);
-      const entry = { row, checkbox, number, numberLabel, name, composing: false, previousName: item.name, conflict, latest };
+      const entry = { row, checkbox, number, numberLabel, handle, name,
+        composing: false, previousName: item.name, conflict, latest };
       const commit = () => {
         if (!conflict.hidden) return;
         enqueue({ kind: "edit", edit: { kind: "name", id: item.id, name: name.value, previousName: entry.previousName } });
@@ -349,15 +587,23 @@ function renderRows(): void {
         if (!entry.composing && !(event as InputEvent).isComposing) commit();
       });
       row.insertCell().append(name, conflict);
+      row.insertCell().append(handle);
       controls = entry;
       rowElements.set(item.id, controls);
     }
-    if (rows.rows[index] !== controls.row) rows.insertBefore(controls.row, rows.rows[index] ?? null);
+    if (rows.rows[index] !== controls.row) {
+      const handleFocused = document.activeElement === controls.handle;
+      rows.insertBefore(controls.row, rows.rows[index] ?? null);
+      if (handleFocused) controls.handle.focus();
+    }
     renderRowSelection(item.id, controls);
     controls.checkbox.setAttribute("aria-label", `${item.number}番を選択`);
     controls.numberLabel.textContent = String(item.number);
-    controls.number.title = `${item.number}番の図形を選択`;
+    controls.number.title = `${item.number}番の図形を選択（ダブルクリックまたはF2で番号を編集）`;
     controls.number.setAttribute("aria-label", controls.number.title);
+    controls.handle.title = `${item.number}番の行を移動（ドラッグまたは上下キー）`;
+    controls.handle.setAttribute("aria-label", controls.handle.title);
+    controls.handle.disabled = items.length < 2;
     controls.name.setAttribute("aria-label", `${item.number}番の名称`);
     if (!controls.conflict.hidden) {
       controls.latest.textContent = "未反映の入力があります。最新の名称：" + item.name;
@@ -1000,7 +1246,12 @@ function pasteRectangles(): void {
 
 window.addEventListener("keydown", event => {
   if (event.isComposing) return;
+  if (numberDialog.open) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") event.preventDefault();
+    return;
+  }
   const target = event.target;
+  if (inlineNumber && target === inlineNumber.input && event.key === "Escape") return;
   const editingInput = target instanceof Element && target.closest('input:not([type="checkbox"]), textarea, select, [contenteditable]');
   if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
     if (event.key === "Escape" && (gesture || selection.region.size || selection.marker.size)) {
@@ -1033,6 +1284,10 @@ window.addEventListener("keydown", event => {
   if (key !== "s") return;
   event.preventDefault();
   event.stopImmediatePropagation();
+  if (!commitInlineNumber(true)) {
+    inlineNumber?.input.focus();
+    return;
+  }
   if (!numericStyleFields.every(({ input, property }) => commitStyleNumber(input, property))) return;
   if (!applyGeometry()) return;
   enqueue({ kind: "save" });

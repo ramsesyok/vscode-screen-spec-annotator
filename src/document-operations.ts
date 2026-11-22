@@ -74,6 +74,9 @@ export class DocumentOperations {
       selectedIds = pasteAnnotations(state.data, this.copiedItems, generateId);
     } else {
       if (!isEdit(edit)) throw new Error("編集操作の内容が無効です。");
+      if (edit.kind === "renumber" && edit.previewVersion !== state.version) {
+        throw new Error("注釈が更新されました。番号の変更内容をもう一度確認してください。");
+      }
       const configuredAnchor = edit.kind === "add"
         ? vscode.workspace.getConfiguration("screenSpecAnnotator").get("defaultMarkerPosition")
         : undefined;

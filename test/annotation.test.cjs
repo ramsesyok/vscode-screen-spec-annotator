@@ -36,6 +36,55 @@ test("a waiting name cannot overwrite an intervening rename", () => {
   assert.equal(data.items[0].name, "draft");
 });
 
+test("numbers and row order are independent and survive save and reopen", () => {
+  const data = documentWithItems();
+  const [a, b, c] = data.items;
+  b.name = "検索";
+  b.values.column = "入力";
+  b.style = { lineStyle: "dashed" };
+  const before = structuredClone(b);
+  const move = { kind: "moveRow", id: c.id, target: a.id, side: "before", previousOrder: [a.id, b.id, c.id] };
+  applyAnnotationEdit(data, move);
+  assert.deepEqual(data.items, [c, a, b]);
+  assert.deepEqual(b, before);
+  assert.throws(() => applyAnnotationEdit(data, move), /行順/);
+  applyAnnotationEdit(data, { ...move, id: b.id, target: c.id, previousOrder: [c.id, a.id, b.id] });
+  applyAnnotationEdit(data, { ...move, id: b.id, target: a.id, side: "after", previousOrder: [b.id, c.id, a.id] });
+  assert.deepEqual(data.items, [c, a, b]);
+  const change = { kind: "number", id: b.id, previousNumber: 2, number: 21 };
+  for (const number of [1, 0, -2, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => applyAnnotationEdit(data, { ...change, number }));
+  }
+  assert.deepEqual(b, before);
+  applyAnnotationEdit(data, change);
+  assert.throws(() => applyAnnotationEdit(data, change), /更新/);
+  assert.deepEqual(b, { ...before, number: 21 });
+  const reopened = parseAnnotation(JSON.stringify(data));
+  assert.deepEqual(reopened.items.map(item => item.number), [3, 1, 21]);
+  applyAnnotationEdit(reopened, { kind: "renumber", previewVersion: 1 });
+  assert.deepEqual(reopened.items, [c, a, b].map((item, index) => ({ ...item, number: index + 1 })));
+  applyAnnotationEdit(reopened, { kind: "add", region: b.region }, () => "item04");
+  assert.deepEqual(parseAnnotation(JSON.stringify(reopened)).items.map(item => item.number), [1, 2, 3, 22]);
+});
+
+test("automatic markers already fit two digits and stay inside the image as a number grows", () => {
+  const data = documentWithItems();
+  const item = data.items[0];
+  item.marker = { x: 7, y: 73 };
+  const region = { ...item.region };
+  function change(number) {
+    applyAnnotationEdit(data, { kind: "number", id: item.id, previousNumber: item.number, number });
+  }
+  change(99);
+  assert.deepEqual(item.marker, { x: 7, y: 73 });
+  change(100);
+  assert.deepEqual(item.marker, { x: 10, y: 70 });
+  assert.deepEqual(item.region, region);
+  item.style = { markerDiameter: 12 };
+  change(1000);
+  assert.deepEqual(item.marker, { x: 10, y: 70 });
+});
+
 test("queued diameter and delete operations stop when the image basis changes", () => {
   const data = documentWithItems();
   const imageBasis = geometryBasis(data);
