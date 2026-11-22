@@ -49,6 +49,17 @@ def exercise(page, panel, file):
     rect = panel.locator("rect[data-drag=move]")
     expect(rect).to_be_visible(timeout=30000)
     save_key = "Meta+s" if sys.platform == "darwin" else "Control+s"
+    picker = panel.locator("#marker-position")
+    picker_style = panel.locator(".marker-position-picker")
+    align = panel.locator("button[data-align=left]")
+    zoom_in = panel.locator("#zoom-in")
+    expect(picker).to_be_disabled()
+    expect(picker_style).to_have_css("opacity", align.evaluate("button => getComputedStyle(button).opacity"))
+    expect(picker).to_have_css("background-color", align.evaluate("button => getComputedStyle(button).backgroundColor"))
+    name.focus()
+    expect(picker).to_be_enabled()
+    expect(picker_style).to_have_css("opacity", "1")
+    expect(picker).to_have_css("background-color", zoom_in.evaluate("button => getComputedStyle(button).backgroundColor"))
 
     def saved_as(value):
         try:
@@ -61,6 +72,29 @@ def exercise(page, panel, file):
     wait_for(lambda: saved_as("保存テスト"), "Webview edit on disk")
     data = json.loads(file.read_text(encoding="utf-8-sig"))
     item = data["items"][0]
+    panel.locator("#zoom-in").click()
+    panel.get_by_role("button", name="PNGを出力").click()
+    png = file.parent / "output" / "sample.annotated.png"
+    try:
+        wait_for(png.is_file, "annotated PNG")
+    except AssertionError as error:
+        notice = panel.locator("#notice").text_content(timeout=2000)
+        raise AssertionError(f"{error}. Editor notice: {notice!r}") from error
+    pixels = panel.locator("body").evaluate("""async (_, encoded) => {
+        const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
+        const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const context = canvas.getContext("2d");
+        context.drawImage(bitmap, 0, 0);
+        const pixel = (x, y) => Array.from(context.getImageData(x, y, 1, 1).data);
+        const number = context.getImageData(61, 16, 8, 8).data;
+        const hasNumber = number.some((value, index) => index % 4 === 0 && value < 80);
+        return { size: [bitmap.width, bitmap.height], edge: pixel(20, 30),
+                 marker: pixel(60, 20), background: pixel(5, 5), hasNumber };
+    }""", base64.b64encode(png.read_bytes()).decode("ascii"))
+    assert pixels == {"size": [200, 100], "edge": [17, 58, 96, 255],
+                      "marker": [255, 255, 255, 255], "background": [0, 0, 0, 255], "hasNumber": True}
+    panel.locator("#fit").click()
 
     # An external move during pointer capture must survive the subsequent drop.
     box = wait_for(rect.bounding_box, "rectangle after the save response")

@@ -1,6 +1,9 @@
 // Google Material Icons (filled), via @material-design-icons/svg 0.14.15.
 // Apache-2.0. The optimized 24 px SVG paths are embedded in the extension.
 const paths = {
+  // Custom icon for the annotation toolbar.
+  marker_position: '<path d="M12 6H3v15h16v-9h-2v7H5V8h7z"/><circle cx="18" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 4.5 18 3h1v6h-1.5V5.2l-.8.6z"/>',
+  file_download: '<path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>',
   save: '<path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>',
   highlight_alt: '<path d="M17 5h-2V3h2v2zm-2 16h2v-2.59L19.59 21 21 19.59 18.41 17H21v-2h-6v6zm4-12h2V7h-2v2zm0 4h2v-2h-2v2zm-8 8h2v-2h-2v2zM7 5h2V3H7v2zM3 17h2v-2H3v2zm2 4v-2H3c0 1.1.9 2 2 2zM19 3v2h2c0-1.1-.9-2-2-2zm-8 2h2V3h-2v2zM3 9h2V7H3v2zm4 12h2v-2H7v2zm-4-8h2v-2H3v2zm0-8h2V3c-1.1 0-2 .9-2 2z"/>',
   add_box: '<path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>',

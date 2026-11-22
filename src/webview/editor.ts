@@ -9,6 +9,7 @@ import type {
 } from "../annotation";
 import type { DocumentState, EditorMessage, HostMessage, OriginalImage } from "../protocol";
 import { materialIcon } from "../material-icons";
+import { composePng, lineDashes, markerFontSize } from "./png";
 
 declare function acquireVsCodeApi(): { postMessage(message: EditorMessage): void };
 const vscode = acquireVsCodeApi();
@@ -23,6 +24,7 @@ const editor = element<HTMLElement>("editor");
 const viewport = element<HTMLElement>("viewport");
 const surface = element<HTMLElement>("surface");
 const canvas = element<HTMLCanvasElement>("original");
+const exportPngButton = element<HTMLButtonElement>("export-png");
 const annotations = element<SVGSVGElement>("annotations");
 const rows = element<HTMLTableSectionElement>("rows");
 const renumberButton = element<HTMLButtonElement>("renumber");
@@ -197,6 +199,7 @@ window.addEventListener("message", event => {
       }
       if (state && message.state.version < state.version) render();
       else applyState(message.state);
+      if (message.exportPng) void renderPng(message.state);
       if (previewAfterNumber && operation.kind === "edit" && operation.edit.kind === "number") {
         previewAfterNumber = false;
         if (!message.error && !renumberButton.disabled) openNumberPreview();
@@ -248,6 +251,21 @@ function hasEditableGeometry(): boolean {
     original.identity.height === data.coordinateSize.height);
 }
 
+async function renderPng(snapshot: DocumentState): Promise<void> {
+  const data = snapshot.data;
+  try {
+    if (!data || snapshot.version !== state?.version || !hasEditableGeometry() ||
+        original?.identity.sha256 !== data.confirmedImage.sha256) {
+      throw new Error("描画中の原画像または注釈が更新されました。最新の状態で再出力してください。");
+    }
+    const png = await composePng(canvas, data, getComputedStyle(annotations).fontFamily);
+    enqueue({ kind: "writePng", sourceVersion: snapshot.version, png });
+  } catch (error) {
+    editError = error instanceof Error ? error.message : "PNGを生成できませんでした。";
+    renderNotice();
+  }
+}
+
 function renderNotice(): void {
   const data = state?.data;
   const changed = original && data && original.identity.sha256 !== data.confirmedImage.sha256;
@@ -273,6 +291,7 @@ function render(): void {
   zoomIn.disabled = zoomOut.disabled = fitButton.disabled = !original;
   selectButton.disabled = !original;
   drawButton.disabled = !hasEditableGeometry();
+  exportPngButton.disabled = !hasEditableGeometry();
   panButton.disabled = !original;
   if (hasEditableGeometry()) {
     viewport.setAttribute("data-vscode-context", '{"webviewSection":"annotationCanvas","preventDefaultContextMenuItems":true}');
@@ -959,7 +978,7 @@ function renderAnnotations(): void {
     if (active?.kind === "marker" && active.preview) marker = active.preview;
     const style = { ...data.style, ...item.style };
     const strokeWidth = style.strokeWidth ?? defaultStrokeWidth;
-    const dashArray = { solid: "none", dashed: "7 4", dotted: "1 4" }[style.lineStyle];
+    const dashArray = lineDashes[style.lineStyle].join(" ") || "none";
     const stroke = { stroke: style.color, "stroke-dasharray": dashArray, "stroke-width": strokeWidth };
     group.append(svg("rect", { ...rect, ...stroke, class: "region", "data-drag": "move" }));
     if (regionSelected) appendSelectionHighlight(group, "rect", { ...rect });
@@ -975,7 +994,7 @@ function renderAnnotations(): void {
     const label = svg("text", {
       x: marker.x, y: marker.y, class: "marker-text",
       fill: style.markerTextColor ?? defaultMarkerColors.markerTextColor,
-      "font-size": radius * Math.min(1.1, 2.5 / String(item.number).length),
+      "font-size": markerFontSize(radius, item.number),
     });
     label.textContent = String(item.number);
     markerGroup.append(label);
@@ -1244,6 +1263,18 @@ function pasteRectangles(): void {
   if (hasEditableGeometry() && applyGeometry()) enqueue({ kind: "pasteRects" });
 }
 
+function commitDocumentInputs(): boolean {
+  if (!commitInlineNumber(true)) {
+    inlineNumber?.input.focus();
+    return false;
+  }
+  return numericStyleFields.every(({ input, property }) => commitStyleNumber(input, property)) && applyGeometry();
+}
+
+exportPngButton.addEventListener("click", () => {
+  if (commitDocumentInputs()) enqueue({ kind: "preparePng" });
+});
+
 window.addEventListener("keydown", event => {
   if (event.isComposing) return;
   if (numberDialog.open) {
@@ -1284,13 +1315,7 @@ window.addEventListener("keydown", event => {
   if (key !== "s") return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  if (!commitInlineNumber(true)) {
-    inlineNumber?.input.focus();
-    return;
-  }
-  if (!numericStyleFields.every(({ input, property }) => commitStyleNumber(input, property))) return;
-  if (!applyGeometry()) return;
-  enqueue({ kind: "save" });
+  if (commitDocumentInputs()) enqueue({ kind: "save" });
 }, true);
 
 vscode.postMessage({ type: "ready" });
