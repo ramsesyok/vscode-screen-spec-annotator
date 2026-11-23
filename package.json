@@ -2,7 +2,7 @@
   "name": "vscode-screen-spec-annotator",
   "displayName": "Screen Spec Annotator",
   "description": "スクリーンショット上の領域に番号を付け、画面仕様書の項目を編集します。",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "ramsesyok",
   "repository": {
     "type": "git",
