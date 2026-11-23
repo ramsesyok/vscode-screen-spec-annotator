@@ -47,9 +47,9 @@
 
 注釈ファイルは6文字の項目IDを持つ形式バージョン2です。旧バージョンの注釈を編集する場合は、初版の拡張を使用してください。
 
-型チェックは `npm run check`、ビルドは `npm run build` で実行します。
+型チェックは `npm run check`、ビルドは `npm run build` で実行します。ビルド時に Excel 手順書の HTML を生成するため、開発環境では Quarto をインストールし、`quarto` を PATH に追加してください。
 
-Node.js 22.18 以降では `npm test` でモデル・送信キュー・通信形式の回帰試験を実行できます。実際の VS Code 文書を使う試験は「実行とデバッグ」の「Screen Spec Annotator 文書編集の統合試験」で起動します。Webview での保存操作は[保存・競合の確認手順](test/save-baseline.md)で検証できます。
+Node.js 22.18 以降では `npm test` でモデル・送信キュー・通信形式の回帰試験を実行できます。実際の VS Code 文書を使う試験は「実行とデバッグ」の「Screen Spec Annotator 文書編集の統合試験」で起動します。Webview での保存操作は[保存・競合の確認手順](docs/save-baseline.md)で検証できます。
 
 Python 3 と Python 版 Playwright がある環境では、`npm run test:webview` で本番バンドルをビルドし、専用プロファイルの VS Code でドラッグ中の外部更新、名称の競合、寸法不一致、保存後のJSONを確認できます。`VSCODE_EXECUTABLE` でデスクトップ版の実行ファイルを指定します。Windows では PATH 上の `code` からも検出します。
 
@@ -59,7 +59,9 @@ Python 3 と Python 版 Playwright がある環境では、`npm run test:webview
 
 VS Codeの拡張機能ビューのメニューで「VSIXからのインストール」を選び、`vscode-screen-spec-annotator-0.1.0.vsix` を指定します。操作ボタンのMaterial IconsはVSIXに同梱されているため、インストール後はオフラインでも表示されます。ボタンの機能名はポインターを重ねると確認できます。
 
-VSIXを作り直す場合は、Node.js 22以上で `npm ci` の後に `npm run package:vsix` を実行します。ライセンス情報は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
+コマンドパレットで **Screen Spec Annotator: Excel連携の手順を開く** を選ぶと、同梱の手順書を VS Code 内のタブで読めます。目次から各章に移動でき、オフラインでも利用できます。
+
+VSIXを作り直す場合は、Node.js 22以上と Quarto が使える環境で `npm ci` の後に `npm run package:vsix` を実行します。ライセンス情報は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
 
 ## GitHub Releasesに公開する
 
@@ -69,4 +71,6 @@ VSIXを作り直す場合は、Node.js 22以上で `npm ci` の後に `npm run p
 
 原画像を相対パスで参照する注釈ファイルの作成・編集・保存、注釈付き PNG と対応表 CSV の出力に対応しています。共有列の設定、差し替え後の位置確認、Markdown の出力は後続の実装範囲です。
 
-[要件定義](requirements.md)・[実装設計](design.md)
+[要件定義](docs/requirements.md)・[実装設計](docs/design.md)・[Excelで画面一覧と追加属性を管理する手順](docs/how-to-excel/index.qmd)
+
+Excel 手順書の PDF は、Quarto と BIZ UDGothic が使える環境で `quarto render docs/how-to-excel --to typst` を実行すると `docs/how-to-excel/_book/how-to-excel.pdf` に生成されます。
