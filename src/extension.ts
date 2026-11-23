@@ -9,6 +9,7 @@ import type { MaterialIconName } from "./material-icons";
 import { readOriginalImage, relativeImagePath, resolveImagePath, supportsImage } from "./original-image";
 import { isDocumentRequest, type HostMessage } from "./protocol";
 import { DocumentOperations, messageOf, readDocument, serialize, styleSetting } from "./document-operations";
+import { registerExcelGuide } from "./excel-guide";
 
 const viewType = "screenSpecAnnotator.annotations";
 const annotationSuffix = ".annotations.json";
@@ -323,6 +324,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
 export function activate(context: vscode.ExtensionContext): void {
   const editor = new AnnotationEditor(context.extensionUri);
   context.subscriptions.push(
+    registerExcelGuide(context),
     vscode.window.registerCustomEditorProvider(viewType, editor, {
       webviewOptions: { retainContextWhenHidden: true },
     }),

@@ -1,0 +1,35 @@
+project:
+  type: book
+
+book:
+  title: "Excel連携の手順"
+  author: "Screen Spec Annotator"
+  output-file: how-to-excel
+  chapters:
+    - index.qmd
+    - setup.qmd
+    - update-csv.qmd
+    - add-screen.qmd
+    - attributes.qmd
+
+lang: ja
+format:
+  html:
+    mainfont: '"BIZ UDGothic", "Consolas", "MS Gothic"'
+    codefont: '"BIZ UDGothic", "Consolas", "MS Gothic"'
+    font-size: 9.5pt
+    toc: false
+  typst:
+    toc: true
+    toc-title: "目次"
+    toc-depth: 2
+    number-sections: true
+    papersize: a4
+    mainfont: '"BIZ UDGothic", "Consolas", "MS Gothic"'
+    codefont: '"BIZ UDGothic", "Consolas", "MS Gothic"'
+    include-in-header:
+      text: |
+        #show heading: set text(font: "BIZ UDGothic", size: 10pt)
+        #show list: set text(font: "BIZ UDGothic", size: 10pt)
+        #show enum: set text(font: "BIZ UDGothic", size: 10pt)
+        #show raw: set text(font: "BIZ UDGothic", size: 10pt)
