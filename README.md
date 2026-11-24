@@ -57,7 +57,7 @@ Python 3 と Python 版 Playwright がある環境では、`npm run test:webview
 
 ## VSIXでインストールする
 
-VS Codeの拡張機能ビューのメニューで「VSIXからのインストール」を選び、`vscode-screen-spec-annotator-0.2.0.vsix` を指定します。操作ボタンのMaterial IconsはVSIXに同梱されているため、インストール後はオフラインでも表示されます。ボタンの機能名はポインターを重ねると確認できます。
+VS Codeの拡張機能ビューのメニューで「VSIXからのインストール」を選び、`vscode-screen-spec-annotator-0.3.0.vsix` を指定します。操作ボタンのMaterial IconsはVSIXに同梱されているため、インストール後はオフラインでも表示されます。ボタンの機能名はポインターを重ねると確認できます。
 
 コマンドパレットで **Screen Spec Annotator: Excel連携の手順を開く** を選ぶと、同梱の手順書を VS Code 内のタブで読めます。目次から各章に移動でき、オフラインでも利用できます。
 
