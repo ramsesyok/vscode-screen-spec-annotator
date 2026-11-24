@@ -123,6 +123,28 @@ test("invalid JSON, v1, duplicate numbers or IDs and an inconsistent maximum are
   }
 });
 
+test("item style toggles as a group and restores the common marker diameter safely", () => {
+  const data = documentWithItems();
+  const [item] = data.items;
+  data.style.markerDiameter = 24;
+  item.style = { lineStyle: "dashed", markerDiameter: 10 };
+  item.marker = { x: 5, y: 5 };
+  const toggle = { kind: "itemStyle", id: item.id, enabled: true };
+  applyAnnotationEdit(data, toggle);
+  assert.equal(item.style.lineStyle, "dashed");
+  assert.equal(item.style.color, data.style.color);
+  assert.equal(item.style.markerDiameter, 10);
+  assert.equal(item.style.markerFillColor, "#ffffff");
+  applyAnnotationEdit(data, { kind: "style", id: item.id, property: "markerDiameter", value: null });
+  assert.deepEqual(item.marker, { x: 7, y: 7 });
+
+  const reopened = parseAnnotation(JSON.stringify(data));
+  assert.equal(reopened.items[0].style.markerDiameter, null);
+  applyAnnotationEdit(reopened, { ...toggle, enabled: false });
+  assert.equal(reopened.items[0].style, undefined);
+  assert.deepEqual(reopened.items[0].marker, { x: 12, y: 12 });
+});
+
 test("pasting after deleting the highest number and reopening uses fresh IDs and numbers", () => {
   const data = documentWithItems();
   applyAnnotationEdit(data, { kind: "remove", ids: ["item03"] });
