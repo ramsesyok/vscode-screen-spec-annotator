@@ -208,8 +208,8 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
         </fieldset>
         <div class="marker-position-picker">
           ${materialIcon("marker_position")}
-          <select id="marker-position" aria-label="丸番号の配置" title="丸番号の配置" disabled>
-            <option value="" disabled selected>丸番号の配置</option>
+          <select id="marker-position" aria-label="番号の配置" title="番号の配置" disabled>
+            <option value="" disabled selected>番号の配置</option>
             <option value="top-left">左上</option>
             <option value="middle-left">左中央</option>
             <option value="bottom-left">左下</option>
@@ -224,7 +224,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
       </div>
       <div id="notice" role="status" hidden></div>
       <div id="json-actions" hidden>${iconButton("data_object", "JSONエディターで開く", 'id="json"')}</div>
-      <div id="viewport" aria-label="原画像上の矩形と丸番号" tabindex="0">
+      <div id="viewport" aria-label="原画像上の矩形と番号" tabindex="0">
         <div id="surface" hidden>
           <canvas id="original"></canvas>
           <svg id="annotations" aria-label="注釈の位置"></svg>
@@ -238,18 +238,19 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
       </div>
       <fieldset id="image-style" class="properties property-grid" hidden disabled>
         <legend>画像全体の共通スタイル</legend>
-        <label>共通の色 <input id="image-color" type="color"></label>
-        <label>丸番号の塗りつぶし色 <input id="image-marker-fill" type="color"></label>
-        <label>丸番号の文字色 <input id="image-marker-text" type="color"></label>
-        <label>共通の線種
-          <select id="image-line" aria-label="共通の線種">
+        <label>矩形の枠線色 <input id="image-color" type="color"></label>
+        <label>番号の枠線色 <input id="image-marker-stroke" type="color"></label>
+        <label>番号の背景色 <input id="image-marker-fill" type="color"></label>
+        <label>番号の文字色 <input id="image-marker-text" type="color"></label>
+        <label>矩形の線種
+          <select id="image-line" aria-label="共通の矩形の線種">
             <option value="solid">実線</option>
             <option value="dashed">破線</option>
             <option value="dotted">点線</option>
           </select>
         </label>
         <label>線の太さ（px） <input id="image-stroke-width" type="number" step="any" aria-label="共通の線の太さ"></label>
-        <label>丸番号の直径（px） <input id="image-marker-diameter" type="number" step="any" aria-label="共通の丸番号の直径" placeholder="自動"></label>
+        <label>番号の直径（px） <input id="image-marker-diameter" type="number" step="any" aria-label="共通の番号の直径" placeholder="自動"></label>
         ${iconButton("save", "新規画像の既定スタイルにする", 'id="save-default-style"')}
       </fieldset>
       <p id="selection-count" role="status">図形を選択すると編集できます。</p>
@@ -261,30 +262,29 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
             <label>矩形 Y <input id="region-y" type="number" step="any"></label>
             <label>幅 <input id="region-width" type="number" step="any"></label>
             <label>高さ <input id="region-height" type="number" step="any"></label>
-            <label>丸番号 X <input id="marker-x" type="number" step="any"></label>
-            <label>丸番号 Y <input id="marker-y" type="number" step="any"></label>
+            <label>番号 X <input id="marker-x" type="number" step="any"></label>
+            <label>番号 Y <input id="marker-y" type="number" step="any"></label>
             ${iconButton("check", "座標を適用", "", "submit")}
           </fieldset>
           <div id="geometry-error" role="status" hidden></div>
         </form>
-        <fieldset id="item-style" class="properties property-grid">
-          <legend>項目のスタイル</legend>
-          <label class="inline-control"><input id="override-color" type="checkbox"> 色を個別指定</label>
-          <label>項目の色 <input id="item-color" type="color"></label>
-          <label class="inline-control"><input id="override-marker-fill" type="checkbox"> 丸番号の塗りつぶし色を個別指定</label>
-          <label>丸番号の塗りつぶし色 <input id="item-marker-fill" type="color"></label>
-          <label class="inline-control"><input id="override-marker-text" type="checkbox"> 丸番号の文字色を個別指定</label>
-          <label>丸番号の文字色 <input id="item-marker-text" type="color"></label>
-          <label>項目の線種
-            <select id="item-line" aria-label="項目の線種">
-              <option value="">共通設定を使う</option>
-              <option value="solid">実線</option>
-              <option value="dashed">破線</option>
-              <option value="dotted">点線</option>
-            </select>
-          </label>
-          <label>線の太さ（px） <input id="item-stroke-width" type="number" step="any" aria-label="項目の線の太さ" placeholder="共通"></label>
-          <label>丸番号の直径（px） <input id="item-marker-diameter" type="number" step="any" aria-label="項目の丸番号の直径" placeholder="共通"></label>
+        <fieldset id="item-style" class="properties">
+          <legend><label><input id="item-style-toggle" type="checkbox" aria-controls="item-style-fields"> 項目スタイルの個別設定</label></legend>
+          <div id="item-style-fields" class="property-grid">
+            <label>矩形の枠線色 <input id="item-color" type="color"></label>
+            <label>番号の枠線色 <input id="item-marker-stroke" type="color"></label>
+            <label>番号の背景色 <input id="item-marker-fill" type="color"></label>
+            <label>番号の文字色 <input id="item-marker-text" type="color"></label>
+            <label>矩形の線種
+              <select id="item-line" aria-label="項目の矩形の線種">
+                <option value="solid">実線</option>
+                <option value="dashed">破線</option>
+                <option value="dotted">点線</option>
+              </select>
+            </label>
+            <label>線の太さ（px） <input id="item-stroke-width" type="number" step="any" aria-label="項目の線の太さ"></label>
+            <label>番号の直径（px） <input id="item-marker-diameter" type="number" step="any" aria-label="項目の番号の直径" placeholder="自動"></label>
+          </div>
         </fieldset>
       </div>
     </aside>

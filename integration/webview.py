@@ -96,6 +96,7 @@ def exercise(page, panel, file):
     assert pixels == {"size": [200, 100], "edge": [17, 58, 96, 255],
                       "marker": [255, 255, 255, 255], "background": [0, 0, 0, 255], "hasNumber": True}
     panel.locator("#fit").click()
+    exercise_styles(panel, file, png, save_key)
 
     # An external move during pointer capture must survive the subsequent drop.
     box = wait_for(rect.bounding_box, "rectangle after the save response")
@@ -149,6 +150,151 @@ def exercise(page, panel, file):
     wait_for(lambda: saved_as("final"), "name saved while geometry is locked")
     persisted = json.loads(file.read_text(encoding="utf-8-sig"))["items"][0]
     assert (persisted["region"]["x"], persisted["marker"]["x"]) == (80, 125)
+
+
+def exercise_styles(panel, file, png, save_key):
+    rect = panel.locator("rect[data-drag=move]")
+    marker = panel.locator("circle[data-drag=marker]")
+    row_name = panel.locator("#rows .row-name")
+    row_name.focus()
+    panel.locator("#image-style-toggle").click()
+    item_style = panel.get_by_role("checkbox", name="項目スタイルの個別設定", exact=True)
+    item_fields = panel.locator("#item-style-fields")
+    rect_color = panel.locator("#item-color")
+    expect(item_style).not_to_be_checked()
+    expect(item_fields).to_be_hidden()
+    common_color = panel.locator("#image-marker-stroke")
+    item_color = panel.locator("#item-marker-stroke")
+    item_fill = panel.locator("#item-marker-fill")
+    item_text = panel.locator("#item-marker-text")
+    expect(common_color).to_have_value("#113a60")
+    common_color.fill("#008040")
+    common_line = panel.locator("#image-line")
+    common_line.select_option("dashed")
+    expect(rect).to_have_attribute("stroke-dasharray", "8 6")
+    common_width = panel.locator("#image-stroke-width")
+    common_width.fill("6")
+    common_width.press("Enter")
+    expect(rect).to_have_attribute("stroke-dasharray", "24 18")
+    expect(marker).to_have_css("stroke-dasharray", "none")
+    common_line.select_option("dotted")
+    expect(rect).to_have_attribute("stroke-dasharray", "0 12")
+    expect(rect).to_have_css("stroke-linecap", "round")
+    expect(marker).to_have_css("stroke-dasharray", "none")
+    expect(marker).to_have_attribute("stroke", "#008040")
+
+    item_style.check()
+    expect(item_fields).to_be_visible()
+    expect(item_fields.get_by_role("checkbox")).to_have_count(0)
+    expect(rect_color).to_be_enabled()
+    expect(rect_color).to_have_value("#113a60")
+    expect(item_color).to_have_value("#008040")
+    rect_color.fill("#446688")
+    expect(rect).to_have_attribute("stroke", "#446688")
+    common_color.fill("#005020")
+    expect(marker).to_have_attribute("stroke", "#008040")
+
+    item_line = panel.locator("#item-line")
+    expect(item_line).to_have_value("dotted")
+    item_line.select_option("dashed")
+    expect(rect).to_have_attribute("stroke-dasharray", "24 18")
+    item_width = panel.locator("#item-stroke-width")
+    item_width.fill("10")
+    item_width.press("Enter")
+    expect(rect).to_have_attribute("stroke-dasharray", "40 30")
+    expect(marker).to_have_css("stroke-dasharray", "none")
+    item_color.fill("#d12070")
+    item_fill.fill("#f2e612")
+    item_text.fill("#1a237e")
+    expect(marker).to_have_attribute("stroke", "#d12070")
+    expect(marker).to_have_attribute("fill", "#f2e612")
+    expect(panel.locator(".marker-text")).to_have_attribute("fill", "#1a237e")
+    item_diameter = panel.locator("#item-marker-diameter")
+    item_diameter.fill("18")
+    item_diameter.press("Enter")
+    expect(marker).to_have_attribute("r", "9")
+
+    item_style.uncheck()
+    expect(item_fields).to_be_hidden()
+    expect(rect).to_have_attribute("stroke", "#113a60")
+    expect(rect).to_have_attribute("stroke-dasharray", "0 12")
+    expect(marker).to_have_attribute("stroke", "#005020")
+    expect(marker).to_have_attribute("fill", "#ffffff")
+    expect(marker).to_have_attribute("r", "7")
+    expect(panel.locator(".marker-text")).to_have_attribute("fill", "#0b253d")
+    item_style.check()
+    expect(item_fields).to_be_visible()
+    expect(rect_color).to_have_value("#113a60")
+    expect(item_color).to_have_value("#005020")
+    item_color.fill("#d12070")
+    item_width.fill("10")
+    item_width.press("Enter")
+    expect(rect).to_have_attribute("stroke-dasharray", "0 20")
+    expect(marker).to_have_attribute("stroke", "#d12070")
+    expect(marker).to_have_css("stroke-dasharray", "none")
+    row_name.press(save_key)
+
+    def saved_styles():
+        try:
+            saved = json.loads(file.read_text(encoding="utf-8-sig"))
+            return (saved["style"].get("markerStrokeColor") == "#005020" and
+                    saved["items"][0].get("style") ==
+                    {"color": "#113a60", "markerStrokeColor": "#d12070", "markerFillColor": "#ffffff",
+                     "markerTextColor": "#0b253d", "lineStyle": "dotted", "strokeWidth": 10,
+                     "markerDiameter": None})
+        except (json.JSONDecodeError, PermissionError):
+            return False
+
+    wait_for(saved_styles, "common and item styles on disk")
+    png.unlink()
+    panel.get_by_role("button", name="PNGを出力").click()
+    wait_for(png.is_file, "PNG with dotted rectangle and solid marker")
+    pixels = rect.evaluate("""async (rect, encoded) => {
+        const svg = document.createElementNS(rect.namespaceURI, "svg");
+        svg.setAttribute("width", 200);
+        svg.setAttribute("height", 100);
+        const outline = rect.cloneNode();
+        outline.setAttribute("fill", "none");
+        svg.append(outline);
+        const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
+        const png = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+        const image = new Image();
+        const svgUrl = URL.createObjectURL(new Blob(
+            [new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" }));
+        image.src = svgUrl;
+        await image.decode();
+        URL.revokeObjectURL(svgUrl);
+        const pixels = (source, points) => {
+            const context = new OffscreenCanvas(200, 100).getContext("2d");
+            context.drawImage(source, 0, 0);
+            return points.map(([x, y]) => Array.from(context.getImageData(x, y, 1, 1).data));
+        };
+        const dot = [[40, 20], [36, 20], [40, 16], [44, 24], [50, 20]];
+        const marker = [[72, 20], [65, 27], [65, 13], [58, 20]];
+        return { svg: pixels(image, dot).map(pixel => pixel[3]),
+                 png: pixels(png, dot), marker: pixels(png, marker) };
+    }""", base64.b64encode(png.read_bytes()).decode("ascii"))
+    assert pixels["svg"] == [255, 255, 255, 0, 0], pixels
+    assert pixels["png"] == [[17, 58, 96, 255]] * 3 + [[0, 0, 0, 255]] * 2, pixels
+    assert pixels["marker"] == [[209, 32, 112, 255]] * 4, pixels
+
+    item_line.select_option("dashed")
+    expect(rect).to_have_attribute("stroke-dasharray", "40 30")
+    row_name.press(save_key)
+    wait_for(lambda: json.loads(file.read_text(encoding="utf-8-sig"))["items"][0]["style"]["lineStyle"] == "dashed",
+             "dashed item style on disk")
+    png.unlink()
+    panel.get_by_role("button", name="PNGを出力").click()
+    wait_for(png.is_file, "PNG with thick dashed rectangle")
+    pixels = rect.evaluate("""async (_, encoded) => {
+        const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
+        const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+        const context = new OffscreenCanvas(image.width, image.height).getContext("2d");
+        context.drawImage(image, 0, 0);
+        return [[45, 20], [60, 40], [45, 50], [20, 35]].map(([x, y]) =>
+            Array.from(context.getImageData(x, y, 1, 1).data));
+    }""", base64.b64encode(png.read_bytes()).decode("ascii"))
+    assert pixels == [[17, 58, 96, 255], [0, 0, 0, 255]] * 2, pixels
 
 
 def exercise_numbering(panel, file):

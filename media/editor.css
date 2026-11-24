@@ -141,13 +141,13 @@ rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
   border: 1px solid var(--vscode-panel-border, #777);
 }
 .properties legend { max-inline-size: 100%; }
+#item-style:has(#item-style-toggle:not(:checked)) #item-style-fields { display: none; }
 .property-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 .property-grid label { display: grid; gap: 3px; }
-.property-grid label.inline-control { grid-column: 1 / -1; display: flex; align-items: center; }
 .property-grid > .icon-button { grid-column: 2; justify-self: end; }
 .properties input[type="number"], .properties select {
   box-sizing: border-box;

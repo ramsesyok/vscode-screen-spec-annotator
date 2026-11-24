@@ -42,7 +42,8 @@ export interface ShapeStyle {
   color: string;
   lineStyle: LineStyle;
   strokeWidth?: number;
-  markerDiameter?: number;
+  markerDiameter?: number | null;
+  markerStrokeColor?: string;
   markerFillColor?: string;
   markerTextColor?: string;
 }
@@ -51,10 +52,11 @@ export const defaultStrokeWidth = 2;
 export const defaultMarkerColors = { markerFillColor: "#ffffff", markerTextColor: "#0b253d" };
 export type NumericStyleProperty = "strokeWidth" | "markerDiameter";
 export type StyleEdit = { kind: "style"; id?: string; imageBasis?: string } & (
-  | { property: "color" | "markerFillColor" | "markerTextColor"; value: string | null }
-  | { property: "lineStyle"; value: LineStyle | null }
+  | { property: "color" | "markerStrokeColor" | "markerFillColor" | "markerTextColor"; value: string }
+  | { property: "lineStyle"; value: LineStyle }
   | { property: NumericStyleProperty; value: number | null }
 );
+export type ItemStyleToggle = { kind: "itemStyle"; id: string; enabled: boolean; imageBasis?: string };
 
 const itemIdPattern = /^[A-Za-z0-9_-]{6}$/;
 
@@ -94,6 +96,7 @@ export type Edit =
   | { kind: "geometry"; changes: GeometryChange[] }
   | PlacementEdit
   | StyleEdit
+  | ItemStyleToggle
   | { kind: "number"; id: string; previousNumber: number; number: number }
   | { kind: "renumber"; previewVersion: number }
   | { kind: "screenId"; value: string; previous: string }
@@ -119,7 +122,7 @@ function isPositiveNumber(value: unknown): value is number {
 
 function isOptionalSizeStyle(style: Record<string, unknown>, size: Size): boolean {
   return (style.strokeWidth === undefined || isPositiveNumber(style.strokeWidth)) &&
-    (style.markerDiameter === undefined ||
+    (style.markerDiameter === undefined || style.markerDiameter === null ||
       (isPositiveNumber(style.markerDiameter) && style.markerDiameter <= Math.min(size.width, size.height)));
 }
 
@@ -147,7 +150,8 @@ function isColor(value: unknown): value is string {
 }
 
 function hasValidMarkerColors(style: Record<string, unknown>): boolean {
-  return (style.markerFillColor === undefined || isColor(style.markerFillColor)) &&
+  return (style.markerStrokeColor === undefined || isColor(style.markerStrokeColor)) &&
+    (style.markerFillColor === undefined || isColor(style.markerFillColor)) &&
     (style.markerTextColor === undefined || isColor(style.markerTextColor));
 }
 
@@ -236,6 +240,7 @@ export function newAnnotation(imagePath: string, image: ImageIdentity, defaults?
     lineStyle: isLineStyle(settings.lineStyle) ? settings.lineStyle : "solid",
   };
   if (isPositiveNumber(settings.strokeWidth)) style.strokeWidth = settings.strokeWidth;
+  if (isColor(settings.markerStrokeColor)) style.markerStrokeColor = settings.markerStrokeColor;
   if (isColor(settings.markerFillColor)) style.markerFillColor = settings.markerFillColor;
   if (isColor(settings.markerTextColor)) style.markerTextColor = settings.markerTextColor;
   if (isPositiveNumber(settings.markerDiameter)) {
@@ -260,6 +265,7 @@ export function isEdit(value: unknown): value is Edit {
   if (value.imageBasis !== undefined && typeof value.imageBasis !== "string") return false;
   if (value.kind === "add") return isRegion(value.region);
   if (value.kind === "renumber") return isInteger(value.previewVersion, 1);
+  if (value.kind === "itemStyle") return isItemId(value.id) && typeof value.enabled === "boolean";
   if (value.kind === "screenId") return typeof value.value === "string" && !/[\r\n]/.test(value.value) &&
     typeof value.previous === "string";
   if (value.kind === "remove" || value.kind === "markerPreset") {
@@ -284,11 +290,11 @@ export function isEdit(value: unknown): value is Edit {
     if (value.property === "strokeWidth" || value.property === "markerDiameter") {
       return value.value === null || isPositiveNumber(value.value);
     }
-    if (value.value === null && value.id === undefined) return false;
-    if (value.property === "color" || value.property === "markerFillColor" || value.property === "markerTextColor") {
-      return value.value === null || isColor(value.value);
+    if (value.property === "color" || value.property === "markerStrokeColor" ||
+        value.property === "markerFillColor" || value.property === "markerTextColor") {
+      return isColor(value.value);
     }
-    if (value.property === "lineStyle") return value.value === null || isLineStyle(value.value);
+    if (value.property === "lineStyle") return isLineStyle(value.value);
     return false;
   }
   if (!isItemId(value.id)) return false;
@@ -323,7 +329,8 @@ export function regionBetween(start: Point, end: Point): Region {
 }
 
 export function effectiveMarkerDiameter(common: ShapeStyle, item: AnnotationItem): number | undefined {
-  return item.style?.markerDiameter ?? common.markerDiameter;
+  const diameter = item.style?.markerDiameter;
+  return diameter === undefined ? common.markerDiameter ?? undefined : diameter ?? undefined;
 }
 
 export function markerRadius(number: number, size: Size, diameter?: number): number {
@@ -418,7 +425,7 @@ function alignedPositions(
   const min = Math.max(...edges.map(({ anchor, movement }) => anchor - movement[axis]));
   const max = Math.min(...edges.map(({ anchor, movement }) =>
     anchor + imageLength - movement[axis] - movement[length]));
-  if (min > max + 1e-7) throw new Error("矩形と丸番号を画像内に収めたまま揃えられません。");
+  if (min > max + 1e-7) throw new Error("矩形と番号を画像内に収めたまま揃えられません。");
   const common = clamp(start + fraction * (end - start), min, max);
   return targets.map(({ bounds }) => common - fraction * bounds[length]);
 }
@@ -453,7 +460,7 @@ export function updatedGeometry(item: AnnotationItem, change: GeometryChange, si
     const marker = markerFollows && updated.region ? markerAfterRegionMove(item, updated.region) : item.marker;
     updated.marker = { ...marker, ...change.marker };
     if (!markerFits(updated.marker, item.number, size, effectiveMarkerDiameter(style, item))) {
-      throw new Error("丸番号全体が画像の内側に収まる座標を指定してください。");
+      throw new Error("番号全体が画像の内側に収まる座標を指定してください。");
     }
   }
   return updated;
@@ -490,7 +497,7 @@ function arrangeItems(items: Map<string, AnnotationItem>, edit: PlacementEdit, s
     const offset = position - bounds[axis];
     if (edit.kind === "distribute" && (movement[axis] + offset < -1e-7 ||
         movement[axis] + movement[span] + offset > length + 1e-7)) {
-      throw new Error("両端を固定して等間隔にすると図形が画像外に出ます。丸番号や両端の位置を調整してください。");
+      throw new Error("両端を固定して等間隔にすると図形が画像外に出ます。番号や両端の位置を調整してください。");
     }
     return part === "region"
       ? { id: item.id, region: { [axis]: position } }
@@ -504,22 +511,50 @@ export function applyStyleValue(style: Partial<ShapeStyle>, edit: StyleEdit): vo
   else Object.assign(style, { [edit.property]: edit.value });
 }
 
-function editAnnotationStyle(data: AnnotationDocument, edit: StyleEdit): void {
+export function resolvedItemStyle(common: ShapeStyle, overrides?: Partial<ShapeStyle>) {
+  const style = { ...common, ...overrides };
+  return {
+    ...overrides,
+    color: style.color,
+    lineStyle: style.lineStyle,
+    markerStrokeColor: style.markerStrokeColor ?? style.color,
+    markerFillColor: style.markerFillColor ?? defaultMarkerColors.markerFillColor,
+    markerTextColor: style.markerTextColor ?? defaultMarkerColors.markerTextColor,
+    strokeWidth: style.strokeWidth ?? defaultStrokeWidth,
+    markerDiameter: style.markerDiameter ?? null,
+  };
+}
+
+export function updatedItemStyle(
+  common: ShapeStyle, overrides: Partial<ShapeStyle> | undefined, edit: StyleEdit | ItemStyleToggle,
+): ShapeStyle | undefined {
+  if (edit.kind === "itemStyle" && !edit.enabled) return undefined;
+  const style = resolvedItemStyle(common, overrides);
+  if (edit.kind === "style") {
+    if (edit.property === "markerDiameter") style.markerDiameter = edit.value;
+    else if (edit.property === "strokeWidth") style.strokeWidth = edit.value ?? defaultStrokeWidth;
+    else applyStyleValue(style, edit);
+  }
+  return style;
+}
+
+function editAnnotationStyle(data: AnnotationDocument, edit: StyleEdit | ItemStyleToggle): void {
   const item = edit.id === undefined ? undefined : data.items.find(entry => entry.id === edit.id);
   if (edit.id !== undefined && !item) throw new Error("対象の項目が見つかりません。");
   const size = data.coordinateSize;
-  if (edit.property === "markerDiameter" && edit.value !== null && edit.value > Math.min(size.width, size.height)) {
-    throw new Error("丸番号の直径は画像の短辺以下にしてください。");
+  if (edit.kind === "style" && edit.property === "markerDiameter" &&
+      edit.value !== null && edit.value > Math.min(size.width, size.height)) {
+    throw new Error("番号の直径は画像の短辺以下にしてください。");
   }
-  const before = edit.property === "markerDiameter" ? (item ? [item] : data.items).map(entry => ({
+  const affectedItems = item ? [item] : edit.kind === "style" && edit.property === "markerDiameter" ? data.items : [];
+  const before = affectedItems.map(entry => ({
     item: entry, diameter: effectiveMarkerDiameter(data.style, entry),
-  })) : [];
+  }));
   if (item) {
-    const style = { ...item.style };
-    applyStyleValue(style, edit);
-    if (Object.keys(style).length) item.style = style;
+    const style = updatedItemStyle(data.style, item.style, edit);
+    if (style) item.style = style;
     else delete item.style;
-  } else {
+  } else if (edit.kind === "style") {
     applyStyleValue(data.style, edit);
   }
   for (const { item: affected, diameter } of before) {
@@ -554,7 +589,7 @@ export function pasteAnnotations(data: AnnotationDocument, copied: readonly Anno
   const right = Math.max(...bounds.map(box => box.x + box.width));
   const bottom = Math.max(...bounds.map(box => box.y + box.height));
   if (right - left > size.width || bottom - top > size.height) {
-    throw new Error("コピーした矩形と丸番号が貼り付け先の画像に収まりません。");
+    throw new Error("コピーした矩形と番号が貼り付け先の画像に収まりません。");
   }
   const offsetX = clamp(right < size.width ? 12 : -12, -left, size.width - right);
   const offsetY = clamp(bottom < size.height ? 12 : -12, -top, size.height - bottom);
@@ -616,7 +651,7 @@ export function applyAnnotationEdit(
     else arrangeItems(items, edit, size, data.style);
     return;
   }
-  if (edit.kind === "style") {
+  if (edit.kind === "style" || edit.kind === "itemStyle") {
     editAnnotationStyle(data, edit);
     return;
   }
@@ -636,7 +671,7 @@ export function applyAnnotationEdit(
         const diameter = effectiveMarkerDiameter(data.style, item);
         if (edit.anchor !== "center") return constrainMarker(point, item.number, size, diameter);
         if (!markerFits(point, item.number, size, diameter)) {
-          throw new Error("矩形の中央に丸番号が収まりません。丸番号の直径を小さくしてください。");
+          throw new Error("矩形の中央に番号が収まりません。番号の直径を小さくしてください。");
         }
         return point;
       });
@@ -648,7 +683,7 @@ export function applyAnnotationEdit(
     const number = data.highestIssuedNumber + 1;
     if (!Number.isSafeInteger(number)) throw new Error("新規項目に割り当てられる番号がありません。");
     const { region } = edit;
-    const marker = constrainMarker(markerAnchorPoint(region, defaultMarkerAnchor), number, size, data.style.markerDiameter);
+    const marker = constrainMarker(markerAnchorPoint(region, defaultMarkerAnchor), number, size, data.style.markerDiameter ?? undefined);
     const used = new Set(data.items.map(item => item.id));
     const id = allocateItemId(used, generateId);
     data.items.push({ id, number, name: "", region, marker, values: {} });
