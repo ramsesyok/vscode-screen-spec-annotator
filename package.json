@@ -2,7 +2,7 @@
   "name": "vscode-screen-spec-annotator",
   "displayName": "Screen Spec Annotator",
   "description": "スクリーンショット上の領域に番号を付け、画面仕様書の項目を編集します。",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "ramsesyok",
   "repository": {
     "type": "git",
@@ -30,15 +30,21 @@
           "type": "object",
           "scope": "application",
           "description": "新規画像の注釈に適用する共通スタイルです。",
-          "default": { "color": "#113a60", "lineStyle": "solid", "strokeWidth": 2, "markerDiameter": null },
+          "default": { "color": "#113a60", "lineStyle": "solid", "markerDiameter": null },
           "additionalProperties": false,
           "properties": {
             "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "矩形の枠線の色（#RRGGBB）" },
+            "colorOpacity": { "type": "number", "minimum": 0, "maximum": 100, "description": "矩形の枠線の不透明度（%）。0は透明、100は不透明" },
             "markerStrokeColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "番号の枠線の色（#RRGGBB）。未指定は矩形の枠線と同じ色" },
+            "markerStrokeOpacity": { "type": "number", "minimum": 0, "maximum": 100, "description": "番号の枠線の不透明度（%）。0は透明、100は不透明" },
             "markerFillColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "番号の背景色（#RRGGBB）。未指定は白" },
+            "markerFillOpacity": { "type": "number", "minimum": 0, "maximum": 100, "description": "番号の背景の不透明度（%）。0は透明、100は不透明" },
             "markerTextColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "番号の文字色（#RRGGBB）。未指定は濃い紺" },
+            "markerTextOpacity": { "type": "number", "minimum": 0, "maximum": 100, "description": "番号の文字の不透明度（%）。0は透明、100は不透明" },
             "lineStyle": { "type": "string", "enum": ["solid", "dashed", "dotted"], "description": "矩形の線種" },
-            "strokeWidth": { "type": ["number", "null"], "exclusiveMinimum": 0, "description": "線の太さ（px）。null は既定の太さ" },
+            "strokeWidth": { "type": ["number", "null"], "exclusiveMinimum": 0, "description": "旧形式の共通線幅（px）。矩形や番号の線幅が未指定の場合に使用" },
+            "regionStrokeWidth": { "type": "number", "exclusiveMinimum": 0, "description": "矩形の線幅（px）" },
+            "markerStrokeWidth": { "type": "number", "exclusiveMinimum": 0, "description": "番号の線幅（px）" },
             "markerDiameter": { "type": ["number", "null"], "exclusiveMinimum": 0, "description": "番号の直径（原画像のpx）。null は自動" }
           }
         }

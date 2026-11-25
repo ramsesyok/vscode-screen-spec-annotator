@@ -188,7 +188,28 @@ rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
   .marker-position-picker { color: ButtonText; }
   .marker-position-picker:has(> select:disabled) { color: GrayText; }
 }
-.properties input[type="color"] { width: 2.8em; min-height: 28px; }
+.style-color {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 30px;
+  min-width: 0;
+  padding-inline: 5px;
+  text-align: start;
+}
+.color-swatch {
+  display: block;
+  flex: none;
+  width: 1.25em;
+  height: 1.25em;
+  border: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border, #777));
+  border-radius: 2px;
+  overflow: hidden;
+  background: repeating-conic-gradient(#777 0% 25%, #e7e7e7 0% 50%) 0 0 / 10px 10px;
+  forced-color-adjust: none;
+}
+.color-swatch > span { display: block; width: 100%; height: 100%; }
 #geometry-error { margin: 0 0 8px; color: var(--vscode-errorForeground); }
 table { border-collapse: collapse; width: 100%; }
 th, td { border-bottom: 1px solid var(--vscode-panel-border); padding: 5px; text-align: left; }
@@ -223,7 +244,7 @@ tr.selected { background: var(--vscode-list-inactiveSelectionBackground); }
 .row-handle:active { cursor: grabbing; }
 #rows tr[data-drop-side="before"] > td { box-shadow: inset 0 2px var(--vscode-focusBorder); }
 #rows tr[data-drop-side="after"] > td { box-shadow: inset 0 -2px var(--vscode-focusBorder); }
-#number-dialog {
+#number-dialog, #color-dialog {
   box-sizing: border-box;
   width: min(28rem, 94vw);
   padding: 16px;
@@ -231,8 +252,74 @@ tr.selected { background: var(--vscode-list-inactiveSelectionBackground); }
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
   color: var(--vscode-foreground);
 }
-#number-dialog::backdrop { background: rgb(0 0 0 / .4); }
-#number-title { margin: 0 0 12px; font-size: 1.1em; }
+#number-dialog::backdrop, #color-dialog::backdrop { background: rgb(0 0 0 / .4); }
+#number-title, #color-title { margin: 0 0 12px; font-size: 1.1em; }
+#color-dialog { width: min(23rem, 94vw); }
+#color-form { display: grid; gap: 10px; }
+#color-title { margin: 0; }
+#color-plane {
+  position: relative;
+  height: clamp(75px, 28vh, 176px);
+  border: 1px solid var(--vscode-panel-border, #777);
+  background: linear-gradient(to top, #000, transparent),
+    linear-gradient(to right, #fff, hsl(var(--picker-hue, 0) 100% 50%));
+  cursor: crosshair;
+  touch-action: none;
+  forced-color-adjust: none;
+}
+#color-plane > span {
+  position: absolute;
+  top: var(--picker-y);
+  left: var(--picker-x);
+  width: 12px;
+  height: 12px;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #111;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.color-slider { display: grid; grid-template-columns: 5em minmax(0, 1fr); align-items: center; }
+.color-slider input {
+  appearance: none;
+  height: 12px;
+  margin: 4px 0;
+  border: 1px solid var(--vscode-panel-border, #777);
+  border-radius: 2px;
+  cursor: pointer;
+  forced-color-adjust: none;
+}
+#color-hue { background: linear-gradient(to right, red, yellow, lime, cyan, blue, magenta, red); }
+#color-opacity-slider {
+  background: linear-gradient(to right, transparent, var(--picker-color, #000)),
+    repeating-conic-gradient(#777 0% 25%, #e7e7e7 0% 50%) 0 0 / 10px 10px;
+}
+.color-slider input::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 18px;
+  border: 1px solid #111;
+  border-radius: 3px;
+  background: white;
+}
+.color-values {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+.color-values label { display: grid; gap: 3px; }
+.color-values input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding-inline: 4px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+}
+#color-preview { box-sizing: border-box; width: 40px; height: 28px; }
 .inline-number {
   width: 8ch;
   padding: 4px;
@@ -245,5 +332,5 @@ tr.selected { background: var(--vscode-list-inactiveSelectionBackground); }
 #number-preview td:last-child { white-space: pre-wrap; overflow-wrap: anywhere; }
 #number-error, .inline-number-error { color: var(--vscode-errorForeground); }
 .inline-number-error { min-width: 12ch; margin-top: 3px; }
-.number-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
-#number-apply { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+#number-apply, #color-apply { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }

@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { applyAnnotationEdit, geometryBasis, newAnnotation, parseAnnotation, pasteAnnotations } = require("../src/annotation.ts");
+const { applyAnnotationEdit, geometryBasis, isEdit, newAnnotation, parseAnnotation, pasteAnnotations,
+  resolvedItemStyle } = require("../src/annotation.ts");
 
 function documentWithItems() {
   const data = newAnnotation("../shared/image.png", { width: 120, height: 80, sha256: "a".repeat(64) });
@@ -9,6 +10,54 @@ function documentWithItems() {
   }
   return data;
 }
+
+test("legacy widths are retained for either stroke until that stroke is edited", () => {
+  const data = documentWithItems();
+  data.style.strokeWidth = 5;
+  data.items[0].style = { strokeWidth: 7 };
+  const reopened = parseAnnotation(JSON.stringify(data));
+  const item = reopened.items[0];
+  const widths = overrides => {
+    const { regionStrokeWidth, markerStrokeWidth } = resolvedItemStyle(reopened.style, overrides);
+    return [regionStrokeWidth, markerStrokeWidth];
+  };
+  assert.deepEqual(widths(), [5, 5]);
+  assert.deepEqual(widths(item.style), [7, 7]);
+  applyAnnotationEdit(reopened, { kind: "style", property: "regionStrokeWidth", value: 3 });
+  applyAnnotationEdit(reopened, { kind: "style", property: "markerStrokeWidth", value: 4 });
+  assert.deepEqual(widths(), [3, 4]);
+  assert.deepEqual(widths(item.style), [7, 7]);
+  applyAnnotationEdit(reopened, { kind: "style", id: item.id, property: "markerStrokeWidth", value: 1.5 });
+  assert.deepEqual(widths(item.style), [7, 1.5]);
+});
+
+test("style defaults and edits preserve zero opacity and reject invalid numeric style values", () => {
+  const size = { width: 120, height: 80, sha256: "a".repeat(64) };
+  const data = newAnnotation("image.png", size, {
+    colorOpacity: 0, markerStrokeOpacity: 37.5, markerFillOpacity: 100, markerTextOpacity: -1,
+    regionStrokeWidth: 4, markerStrokeWidth: 1.5,
+  });
+  const reopened = parseAnnotation(JSON.stringify(data));
+  const style = resolvedItemStyle(reopened.style);
+  assert.deepEqual([style.colorOpacity, style.markerStrokeOpacity, style.markerFillOpacity, style.markerTextOpacity],
+    [0, 37.5, 100, 100]);
+  assert.deepEqual([style.regionStrokeWidth, style.markerStrokeWidth], [4, 1.5]);
+  for (const property of ["colorOpacity", "markerStrokeOpacity", "markerFillOpacity", "markerTextOpacity"]) {
+    assert.equal(isEdit({ kind: "style", property, value: 0 }), true);
+    for (const value of [-1, 101, "50"]) {
+      assert.equal(isEdit({ kind: "style", property, value }), false);
+      assert.throws(() => parseAnnotation(JSON.stringify({ ...data, style: { ...data.style, [property]: value } })), /スタイル/);
+    }
+  }
+  assert.equal(isEdit({ kind: "style", property: "markerStrokeWidth", value: 0 }), false);
+  const colorEdit = { kind: "style", property: "markerFillColor", value: "#143fc1", opacity: 0 };
+  assert.equal(isEdit(colorEdit), true);
+  assert.equal(isEdit({ ...colorEdit, opacity: 101 }), false);
+  assert.equal(isEdit({ ...colorEdit, property: "lineStyle", value: "solid" }), false);
+  applyAnnotationEdit(reopened, colorEdit);
+  assert.equal(reopened.style.markerFillColor, "#143fc1");
+  assert.equal(reopened.style.markerFillOpacity, 0);
+});
 
 test("queued drags preserve concurrent geometry and image changes but allow unrelated edits", () => {
   const data = documentWithItems();
