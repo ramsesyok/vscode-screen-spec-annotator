@@ -73,7 +73,8 @@ Webviewでは画像を描画したCanvasにSVGの矩形と丸番号を重ねる�
 - `items` の配列順を表の行順とする。項目IDは英数字、`_`、`-` で構成する6文字のランダム文字列とし、同じ注釈ファイル内で衝突した場合は生成し直す。`number` はファイル内で一意の正の整数とする。UUIDを使っていたバージョン1は専用エディターでの読み込み対象外とする。
 - ルートの `style` が画像単位の共通設定になる。項目の `style` には個別指定した属性だけを保持し、未指定の属性は描画時に共通設定を参照する。色は `#RRGGBB` で、線種は `solid`、`dashed`、`dotted` で保存する。
 - `style.markerFillColor` と `style.markerTextColor` は任意の `#RRGGBB` 色とする。項目ごとに上書きでき、共通色も未指定の場合は白と濃い紺を使う。共通スタイルを既定値として保存すると新規注釈にも適用される。
-- `style.strokeWidth` と `style.markerDiameter` は任意の正の数値とする。線の太さは表示上のpxで扱い、共通の既定値は `2` とする。直径は原画像のpxで扱い、共通設定を省略した場合は画像寸法と表示番号の桁に応じて計算する。
+- `style.colorOpacity`、`style.markerStrokeOpacity`、`style.markerFillOpacity`、`style.markerTextOpacity` は0〜100の不透明度とし、既定値は `100` とする。
+- `style.regionStrokeWidth`、`style.markerStrokeWidth`、`style.markerDiameter` は任意の正の数値とする。線幅は表示上のpxで扱い、既定値は `2` とする。旧形式の `strokeWidth` は同じスタイル内で個別の線幅が省略されたときに使用する。直径は原画像のpxで扱い、共通設定を省略した場合は画像寸法と表示番号の桁に応じて計算する。
 - `highestIssuedNumber` の初期値は `0`。新規項目に `highestIssuedNumber + 1` を割り当てて最大番号を更新する。削除と再付番では最大番号を保持する。
 - `confirmedImage` は最後に位置を確認した画像のハッシュと寸法を持つ。画像が初めて読み込まれるときは、表示している原画像を初期の確認済み画像として扱う。
 - `coordinateSize` は現在の座標が基準とする寸法。確認済み画像の寸法と別に持たせることで、確認前に保存し、再度差し替えた場合にも拡縮の基準を特定できる。

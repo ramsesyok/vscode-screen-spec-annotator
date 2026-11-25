@@ -1,4 +1,4 @@
-import { defaultMarkerColors, defaultStrokeWidth, effectiveMarkerDiameter, markerRadius } from "../annotation";
+import { markerRadius, opaquePercent, resolvedItemStyle } from "../annotation";
 import type { AnnotationDocument, LineStyle } from "../annotation";
 
 export function regionStrokePattern(lineStyle: LineStyle, strokeWidth: number): { dash: number[]; cap: CanvasLineCap } {
@@ -24,31 +24,33 @@ export async function composePng(
   context.drawImage(original, 0, 0);
   context.textAlign = "center";
   context.textBaseline = "middle";
-  for (const item of data.items) {
+  const styledItems = data.items.map(item => ({ item, style: resolvedItemStyle(data.style, item.style) }));
+  for (const { item, style } of styledItems) {
     const { x, y, width, height } = item.region;
-    const style = { ...data.style, ...item.style };
-    const strokeWidth = style.strokeWidth ?? defaultStrokeWidth;
-    const { dash, cap } = regionStrokePattern(style.lineStyle, strokeWidth);
+    const { dash, cap } = regionStrokePattern(style.lineStyle, style.regionStrokeWidth);
     context.strokeStyle = style.color;
-    context.lineWidth = strokeWidth;
+    context.globalAlpha = style.colorOpacity / opaquePercent;
+    context.lineWidth = style.regionStrokeWidth;
     context.lineCap = cap;
     context.setLineDash(dash);
     context.strokeRect(x, y, width, height);
   }
   context.setLineDash([]);
-  for (const item of data.items) {
-    const style = { ...data.style, ...item.style };
-    context.strokeStyle = style.markerStrokeColor ?? style.color;
-    context.lineWidth = style.strokeWidth ?? defaultStrokeWidth;
+  for (const { item, style } of styledItems) {
+    context.strokeStyle = style.markerStrokeColor;
+    context.lineWidth = style.markerStrokeWidth;
     const { x, y } = item.marker;
-    const radius = markerRadius(item.number, data.coordinateSize, effectiveMarkerDiameter(data.style, item));
+    const radius = markerRadius(item.number, data.coordinateSize, style.markerDiameter ?? undefined);
     context.beginPath();
     context.arc(x, y, radius, 0, 2 * Math.PI);
-    context.fillStyle = style.markerFillColor ?? defaultMarkerColors.markerFillColor;
+    context.fillStyle = style.markerFillColor;
+    context.globalAlpha = style.markerFillOpacity / opaquePercent;
     context.fill();
+    context.globalAlpha = style.markerStrokeOpacity / opaquePercent;
     context.stroke();
     context.font = `700 ${markerFontSize(radius, item.number)}px ${fontFamily}`;
-    context.fillStyle = style.markerTextColor ?? defaultMarkerColors.markerTextColor;
+    context.fillStyle = style.markerTextColor;
+    context.globalAlpha = style.markerTextOpacity / opaquePercent;
     context.fillText(String(item.number), x, y);
   }
   const blob = await new Promise<Blob | null>(resolve => output.toBlob(resolve, "image/png"));

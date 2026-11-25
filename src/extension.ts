@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import * as vscode from "vscode";
-import { markerAnchors, newAnnotation } from "./annotation";
+import { markerAnchors, newAnnotation, opaquePercent } from "./annotation";
 import type { MarkerAnchor } from "./annotation";
 import { materialIcon } from "./material-icons";
 import type { MaterialIconName } from "./material-icons";
@@ -16,6 +16,25 @@ const annotationSuffix = ".annotations.json";
 
 function iconButton(icon: MaterialIconName, label: string, attributes: string, type = "button", title = label): string {
   return `<button type="${type}" class="icon-button" ${attributes} aria-label="${label}" title="${title}">${materialIcon(icon)}</button>`;
+}
+
+function styleFields(scope: "image" | "item", label: string): string {
+  const colors = [["color", "矩形の枠線色"], ["marker-stroke", "番号の枠線色"],
+    ["marker-fill", "番号の背景色"], ["marker-text", "番号の文字色"]];
+  return `${colors.map(([id, name]) => `
+      <button class="style-color" type="button" id="${scope}-${id}" aria-label="${label}の${name}" aria-haspopup="dialog">
+        ${name}<span class="color-swatch" aria-hidden="true"><span></span></span>
+      </button>`).join("")}
+    <label>矩形の線種
+      <select id="${scope}-line" aria-label="${label}の矩形の線種">
+        <option value="solid">実線</option>
+        <option value="dashed">破線</option>
+        <option value="dotted">点線</option>
+      </select>
+    </label>
+    <label>矩形の線幅（px） <input id="${scope}-stroke-width" type="number" step="any" aria-label="${label}の矩形の線幅"></label>
+    <label>番号の直径（px） <input id="${scope}-marker-diameter" type="number" step="any" aria-label="${label}の番号の直径" placeholder="自動"></label>
+    <label>番号の線幅（px） <input id="${scope}-marker-stroke-width" type="number" step="any" aria-label="${label}の番号の線幅"></label>`;
 }
 
 function isAlreadyPresent(error: unknown): boolean {
@@ -238,19 +257,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
       </div>
       <fieldset id="image-style" class="properties property-grid" hidden disabled>
         <legend>画像全体の共通スタイル</legend>
-        <label>矩形の枠線色 <input id="image-color" type="color"></label>
-        <label>番号の枠線色 <input id="image-marker-stroke" type="color"></label>
-        <label>番号の背景色 <input id="image-marker-fill" type="color"></label>
-        <label>番号の文字色 <input id="image-marker-text" type="color"></label>
-        <label>矩形の線種
-          <select id="image-line" aria-label="共通の矩形の線種">
-            <option value="solid">実線</option>
-            <option value="dashed">破線</option>
-            <option value="dotted">点線</option>
-          </select>
-        </label>
-        <label>線の太さ（px） <input id="image-stroke-width" type="number" step="any" aria-label="共通の線の太さ"></label>
-        <label>番号の直径（px） <input id="image-marker-diameter" type="number" step="any" aria-label="共通の番号の直径" placeholder="自動"></label>
+        ${styleFields("image", "共通")}
         ${iconButton("save", "新規画像の既定スタイルにする", 'id="save-default-style"')}
       </fieldset>
       <p id="selection-count" role="status">図形を選択すると編集できます。</p>
@@ -271,19 +278,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
         <fieldset id="item-style" class="properties">
           <legend><label><input id="item-style-toggle" type="checkbox" aria-controls="item-style-fields"> 項目スタイルの個別設定</label></legend>
           <div id="item-style-fields" class="property-grid">
-            <label>矩形の枠線色 <input id="item-color" type="color"></label>
-            <label>番号の枠線色 <input id="item-marker-stroke" type="color"></label>
-            <label>番号の背景色 <input id="item-marker-fill" type="color"></label>
-            <label>番号の文字色 <input id="item-marker-text" type="color"></label>
-            <label>矩形の線種
-              <select id="item-line" aria-label="項目の矩形の線種">
-                <option value="solid">実線</option>
-                <option value="dashed">破線</option>
-                <option value="dotted">点線</option>
-              </select>
-            </label>
-            <label>線の太さ（px） <input id="item-stroke-width" type="number" step="any" aria-label="項目の線の太さ"></label>
-            <label>番号の直径（px） <input id="item-marker-diameter" type="number" step="any" aria-label="項目の番号の直径" placeholder="自動"></label>
+            ${styleFields("item", "項目")}
           </div>
         </fieldset>
       </div>
@@ -304,6 +299,21 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
       <tfoot id="empty"><tr><td colspan="4">「矩形を追加」を選び、画像上をドラッグします。</td></tr></tfoot>
     </table>
   </section>
+  <dialog id="color-dialog" aria-labelledby="color-title">
+    <form id="color-form">
+      <h2 id="color-title"></h2>
+      <div id="color-plane" role="group" tabindex="0" aria-label="彩度と明度"
+        aria-description="左右の矢印キーで彩度、上下の矢印キーで明度を調整します。"><span aria-hidden="true"></span></div>
+      <label class="color-slider">色相 <input id="color-hue" type="range" min="0" max="360" step="any"></label>
+      <label class="color-slider">不透明度 <input id="color-opacity-slider" type="range" min="0" max="${opaquePercent}" step="any"></label>
+      <div class="color-values">
+        <label>カラーコード <input id="color-hex" type="text" required pattern="#?[A-Fa-f0-9]{6}" maxlength="7" spellcheck="false" autofocus></label>
+        <label>不透明度（%）<input id="color-opacity" type="number" min="0" max="${opaquePercent}" step="any" required></label>
+        <span id="color-preview" class="color-swatch" aria-hidden="true"><span></span></span>
+      </div>
+      <div class="dialog-actions"><button id="color-cancel" type="button">取消</button><button id="color-apply" type="submit">確定</button></div>
+    </form>
+  </dialog>
   <dialog id="number-dialog" aria-labelledby="number-title">
     <form id="number-form">
       <h2 id="number-title">一覧順に再付番</h2>
@@ -311,7 +321,7 @@ class AnnotationEditor implements vscode.CustomTextEditorProvider {
         <table><thead><tr><th>変更前</th><th>変更後</th><th>名称</th></tr></thead><tbody id="preview-rows"></tbody></table>
       </div>
       <p id="number-error" role="alert" hidden></p>
-      <div class="number-actions"><button id="number-cancel" type="button">取消</button><button id="number-apply" type="submit">確定</button></div>
+      <div class="dialog-actions"><button id="number-cancel" type="button">取消</button><button id="number-apply" type="submit">確定</button></div>
     </form>
   </dialog>
 </main>

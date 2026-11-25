@@ -1,15 +1,17 @@
 import { OperationQueue, type QueuedOperation } from "./operation-queue";
 import {
-  applyStyleValue, clamp, constrainMarker, constrainRegionPosition, defaultMarkerColors, defaultStrokeWidth, geometryBasis, effectiveMarkerDiameter,
-  isAlignment, isDistributionDirection, isLineStyle, isMarkerAnchor, markerAfterRegionMove, markerRadius,
+  applyStyleValue, clamp, colorOpacityProperty, constrainMarker, constrainRegionPosition, geometryBasis, effectiveMarkerDiameter,
+  isAlignment, isDistributionDirection, isLineStyle, isMarkerAnchor,
+  markerAfterRegionMove, markerRadius, opaquePercent,
   placementBounds, regionBetween, resolvedItemStyle, updatedGeometry, updatedItemStyle,
 } from "../annotation";
 import type {
-  AnnotationItem, Edit, GeometryChange, MarkerAnchor, NumericStyleProperty, PlacementSubject,
+  AnnotationItem, Edit, GeometryChange, MarkerAnchor, PlacementSubject,
   Point, Region, ShapePart, ShapeStyle,
 } from "../annotation";
 import type { DocumentState, EditorMessage, HostMessage, OriginalImage } from "../protocol";
 import { materialIcon } from "../material-icons";
+import { createColorDialog, updateColorSwatch } from "./color-dialog";
 import { composePng, markerFontSize, regionStrokePattern } from "./png";
 
 declare function acquireVsCodeApi(): { postMessage(message: EditorMessage): void };
@@ -33,6 +35,8 @@ const screenIdInput = element<HTMLInputElement>("screen-id");
 const exportCsvButton = element<HTMLButtonElement>("export-csv");
 let screenIdDraftBase: string | undefined;
 const numberDialog = element<HTMLDialogElement>("number-dialog");
+const colorDialog = element<HTMLDialogElement>("color-dialog");
+const openColorDialog = createColorDialog(colorDialog);
 const numberError = element<HTMLElement>("number-error");
 const notice = element<HTMLElement>("notice");
 const empty = element<HTMLElement>("empty");
@@ -49,7 +53,6 @@ const fitButton = element<HTMLButtonElement>("fit");
 const imageStyle = element<HTMLFieldSetElement>("image-style");
 const imageStyleToggle = element<HTMLButtonElement>("image-style-toggle");
 const imageLine = element<HTMLSelectElement>("image-line");
-const imageStrokeWidth = element<HTMLInputElement>("image-stroke-width");
 const imageMarkerDiameter = element<HTMLInputElement>("image-marker-diameter");
 const alignmentTools = element<HTMLFieldSetElement>("alignment");
 const markerPosition = element<HTMLSelectElement>("marker-position");
@@ -67,26 +70,23 @@ const regionFields = {
 };
 const markerFields = { x: element<HTMLInputElement>("marker-x"), y: element<HTMLInputElement>("marker-y") };
 const itemLine = element<HTMLSelectElement>("item-line");
-const itemStrokeWidth = element<HTMLInputElement>("item-stroke-width");
 const itemMarkerDiameter = element<HTMLInputElement>("item-marker-diameter");
 
+const styleScopes = ["image", "item"] as const;
 const colorStyleFields = [
-  { property: "color", image: element<HTMLInputElement>("image-color"),
-    item: element<HTMLInputElement>("item-color") },
-  { property: "markerStrokeColor", image: element<HTMLInputElement>("image-marker-stroke"),
-    item: element<HTMLInputElement>("item-marker-stroke") },
-  { property: "markerFillColor", image: element<HTMLInputElement>("image-marker-fill"),
-    item: element<HTMLInputElement>("item-marker-fill") },
-  { property: "markerTextColor", image: element<HTMLInputElement>("image-marker-text"),
-    item: element<HTMLInputElement>("item-marker-text") },
+  { id: "color", property: "color" },
+  { id: "marker-stroke", property: "markerStrokeColor" },
+  { id: "marker-fill", property: "markerFillColor" },
+  { id: "marker-text", property: "markerTextColor" },
 ] as const;
-
-const numericStyleFields = [
-  { input: imageStrokeWidth, property: "strokeWidth", scope: "image" },
-  { input: imageMarkerDiameter, property: "markerDiameter", scope: "image" },
-  { input: itemStrokeWidth, property: "strokeWidth", scope: "item" },
-  { input: itemMarkerDiameter, property: "markerDiameter", scope: "item" },
-] as const;
+const colorButtons = styleScopes.flatMap(scope => colorStyleFields.map(({ id, property }) => ({
+  scope, property, button: element<HTMLButtonElement>(`${scope}-${id}`),
+})));
+const numericStyleFields = styleScopes.flatMap(scope => [
+  { input: element<HTMLInputElement>(`${scope}-stroke-width`), property: "regionStrokeWidth", scope },
+  { input: element<HTMLInputElement>(`${scope}-marker-stroke-width`), property: "markerStrokeWidth", scope },
+  { input: scope === "image" ? imageMarkerDiameter : itemMarkerDiameter, property: "markerDiameter", scope },
+] as const);
 const styleDrafts = new Map<HTMLInputElement, string | undefined>();
 
 let state: DocumentState | undefined;
@@ -729,6 +729,20 @@ function renderStyleNumber(input: HTMLInputElement, value: number | null | undef
   if (input.value !== current) input.value = current;
 }
 
+function renderStyleFields(scope: typeof styleScopes[number], style: ReturnType<typeof resolvedItemStyle>): void {
+  for (const { scope: fieldScope, property, button } of colorButtons) {
+    if (fieldScope !== scope) continue;
+    const color = style[property];
+    const opacity = style[colorOpacityProperty[property]];
+    updateColorSwatch(button.querySelector<HTMLElement>(".color-swatch > span")!, color, opacity);
+    button.title = `${color} · 不透明度 ${opacity}%`;
+  }
+  for (const field of numericStyleFields) {
+    if (field.scope === scope) renderStyleNumber(field.input, style[field.property]);
+  }
+  (scope === "image" ? imageLine : itemLine).value = style.lineStyle;
+}
+
 function renderProperties(): void {
   const data = state?.data;
   const items = selectedItems();
@@ -746,8 +760,8 @@ function renderProperties(): void {
   const item = items.length === 1 ? items[0] : undefined;
   itemProperties.hidden = !items.length;
   itemStyle.hidden = !item;
-  for (const input of [itemStrokeWidth, itemMarkerDiameter]) {
-    if (styleDrafts.get(input) !== item?.id) styleDrafts.delete(input);
+  for (const { input, scope } of numericStyleFields) {
+    if (scope === "item" && styleDrafts.get(input) !== item?.id) styleDrafts.delete(input);
   }
   removeButton.disabled = !canEditGeometry || !items.length;
   imageMarkerDiameter.disabled = itemMarkerDiameter.disabled = !canEditGeometry;
@@ -773,10 +787,7 @@ function renderProperties(): void {
   const style = resolvedItemStyle(common, overrides);
   itemStyleToggle.checked = !!overrides && Object.keys(overrides).length > 0;
   itemStyleToggle.disabled = !canEditGeometry && style.markerDiameter !== (common.markerDiameter ?? null);
-  for (const field of colorStyleFields) field.item.value = style[field.property];
-  itemLine.value = style.lineStyle;
-  renderStyleNumber(itemStrokeWidth, style.strokeWidth);
-  renderStyleNumber(itemMarkerDiameter, style.markerDiameter);
+  renderStyleFields("item", style);
 }
 
 function renderCoordinates<Key extends string>(fields: Record<Key, HTMLInputElement>, values: Record<Key, number>[]): void {
@@ -795,12 +806,7 @@ function renderCoordinates<Key extends string>(fields: Record<Key, HTMLInputElem
 function renderImageStyle(): void {
   const style = state?.data?.style;
   if (!style) return;
-  const draft = pendingStyle(style);
-  const colors = { ...defaultMarkerColors, markerStrokeColor: draft.color, ...draft };
-  for (const field of colorStyleFields) field.image.value = colors[field.property];
-  imageLine.value = draft.lineStyle;
-  renderStyleNumber(imageStrokeWidth, draft.strokeWidth ?? defaultStrokeWidth);
-  renderStyleNumber(imageMarkerDiameter, draft.markerDiameter);
+  renderStyleFields("image", resolvedItemStyle(pendingStyle(style)));
 }
 
 function changedCoordinates<Key extends string>(fields: Record<Key, HTMLInputElement>): Partial<Record<Key, number>> | undefined {
@@ -854,15 +860,15 @@ geometryForm.addEventListener("submit", event => {
   applyGeometry();
 });
 
-function commitStyleNumber(input: HTMLInputElement, property: NumericStyleProperty): boolean {
+function commitStyleNumber(input: HTMLInputElement, property: typeof numericStyleFields[number]["property"]): boolean {
   if (!styleDrafts.has(input)) return true;
   if (property === "markerDiameter" && !hasEditableGeometry()) return false;
   const data = state?.data;
   if (!data) return false;
   const id = styleDrafts.get(input);
   const value = input.value === "" ? null : input.valueAsNumber;
-  const label = property === "strokeWidth" ? "線の太さ" : "番号の直径";
   if (input.validity.badInput || (value !== null && (!Number.isFinite(value) || value <= 0))) {
+    const label = property === "markerDiameter" ? "番号の直径" : "線幅";
     editError = `${label}には0より大きい値を入力してください。`;
   } else if (property === "markerDiameter" && value !== null &&
       value > Math.min(data.coordinateSize.width, data.coordinateSize.height)) {
@@ -912,20 +918,32 @@ itemStyleToggle.addEventListener("change", () => {
   const changesDiameter = !enabled &&
     effectiveMarkerDiameter(common, { ...item, style: current }) !== (common.markerDiameter ?? undefined);
   if (!enabled) {
-    styleDrafts.delete(itemStrokeWidth);
-    styleDrafts.delete(itemMarkerDiameter);
+    for (const { input, scope } of numericStyleFields) {
+      if (scope === "item") styleDrafts.delete(input);
+    }
   }
   enqueue({ kind: "edit", edit: { kind: "itemStyle", id: item.id, enabled,
     imageBasis: changesDiameter ? geometryBasis(data) : undefined } });
 });
-for (const { property, image, item } of colorStyleFields) {
-  image.addEventListener("change", () => enqueue({
-    kind: "edit", edit: { kind: "style", property, value: image.value },
-  }));
-  item.addEventListener("change", () => {
-    const [selected] = selectedItems();
-    if (selected && itemStyleToggle.checked) enqueue({
-      kind: "edit", edit: { kind: "style", id: selected.id, property, value: item.value },
+for (const { button, property, scope } of colorButtons) {
+  button.addEventListener("click", () => {
+    const data = state?.data;
+    const item = scope === "item" ? selectedItems()[0] : undefined;
+    if (!data || (scope === "item" && (!item || !itemStyleToggle.checked))) return;
+    const edits = queue.queuedEdits();
+    const style = resolvedItemStyle(pendingStyle(data.style, edits), item && pendingItemStyle(data.style, item, edits));
+    const opacityProperty = colorOpacityProperty[property];
+    const color = style[property];
+    const opacity = style[opacityProperty];
+    const id = item?.id;
+    openColorDialog(button.getAttribute("aria-label")!, color, opacity, (nextColor, nextOpacity) => {
+      if (!state?.data || (item && (selectedItems()[0]?.id !== id || !itemStyleToggle.checked))) return;
+      if (nextColor !== color.toLowerCase()) {
+        enqueue({ kind: "edit", edit: { kind: "style", id, property, value: nextColor,
+          opacity: nextOpacity === opacity ? undefined : nextOpacity } });
+      } else if (nextOpacity !== opacity) {
+        enqueue({ kind: "edit", edit: { kind: "style", id, property: opacityProperty, value: nextOpacity } });
+      }
     });
   });
 }
@@ -1008,16 +1026,17 @@ function renderAnnotations(): void {
     let marker = item.marker;
     if (active?.kind === "move" && active.preview) marker = markerAfterRegionMove(active.item, active.preview);
     if (active?.kind === "marker" && active.preview) marker = active.preview;
-    const style = { ...data.style, ...item.style };
-    const strokeWidth = style.strokeWidth ?? defaultStrokeWidth;
-    const { dash, cap } = regionStrokePattern(style.lineStyle, strokeWidth);
-    group.append(svg("rect", { ...rect, stroke: style.color, "stroke-width": strokeWidth,
+    const style = resolvedItemStyle(data.style, item.style);
+    const { dash, cap } = regionStrokePattern(style.lineStyle, style.regionStrokeWidth);
+    group.append(svg("rect", { ...rect, stroke: style.color, "stroke-width": style.regionStrokeWidth,
+      "stroke-opacity": style.colorOpacity / opaquePercent,
       "stroke-dasharray": dash.join(" ") || "none", "stroke-linecap": cap, class: "region", "data-drag": "move" }));
     if (regionSelected) appendSelectionHighlight(group, "rect", { ...rect });
     const radius = markerRadius(item.number, data.coordinateSize, style.markerDiameter ?? undefined);
     const circle = { cx: marker.x, cy: marker.y, r: radius };
-    const markerShape = svg("circle", { ...circle, stroke: style.markerStrokeColor ?? style.color, "stroke-width": strokeWidth,
-      fill: style.markerFillColor ?? defaultMarkerColors.markerFillColor, class: "marker", "data-drag": "marker" });
+    const markerShape = svg("circle", { ...circle, stroke: style.markerStrokeColor, "stroke-width": style.markerStrokeWidth,
+      "stroke-opacity": style.markerStrokeOpacity / opaquePercent, fill: style.markerFillColor,
+      "fill-opacity": style.markerFillOpacity / opaquePercent, class: "marker", "data-drag": "marker" });
     if (editable) markerShape.setAttribute("data-vscode-context", JSON.stringify({
       webviewSection: "annotationMarker", annotationMarker: item.id, preventDefaultContextMenuItems: true,
     }));
@@ -1025,7 +1044,7 @@ function renderAnnotations(): void {
     if (markerSelected) appendSelectionHighlight(markerGroup, "circle", circle);
     const label = svg("text", {
       x: marker.x, y: marker.y, class: "marker-text",
-      fill: style.markerTextColor ?? defaultMarkerColors.markerTextColor,
+      fill: style.markerTextColor, "fill-opacity": style.markerTextOpacity / opaquePercent,
       "font-size": markerFontSize(radius, item.number),
     });
     label.textContent = String(item.number);
@@ -1048,8 +1067,9 @@ function renderAnnotations(): void {
   markers.append(...selectedMarkers);
   annotations.append(...selectedRegions, markers);
   if (gesture?.kind === "add" && gesture.preview) {
-    annotations.append(svg("rect", { ...gesture.preview, stroke: data.style.color,
-      "stroke-width": data.style.strokeWidth ?? defaultStrokeWidth, class: "region preview" }));
+    const style = resolvedItemStyle(data.style);
+    annotations.append(svg("rect", { ...gesture.preview, stroke: style.color,
+      "stroke-width": style.regionStrokeWidth, "stroke-opacity": style.colorOpacity / opaquePercent, class: "region preview" }));
   }
   if (gesture?.kind === "select-box" && gesture.preview) {
     annotations.append(svg("rect", { ...gesture.preview, class: "selection-box",
@@ -1336,7 +1356,7 @@ exportPngButton.addEventListener("click", () => {
 
 window.addEventListener("keydown", event => {
   if (event.isComposing) return;
-  if (numberDialog.open) {
+  if (numberDialog.open || colorDialog.open) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") event.preventDefault();
     return;
   }

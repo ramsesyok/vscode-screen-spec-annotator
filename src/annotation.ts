@@ -40,19 +40,32 @@ export function isMarkerAnchor(value: unknown): value is MarkerAnchor {
 
 export interface ShapeStyle {
   color: string;
+  colorOpacity?: number;
   lineStyle: LineStyle;
   strokeWidth?: number;
+  regionStrokeWidth?: number;
+  markerStrokeWidth?: number;
   markerDiameter?: number | null;
   markerStrokeColor?: string;
+  markerStrokeOpacity?: number;
   markerFillColor?: string;
+  markerFillOpacity?: number;
   markerTextColor?: string;
+  markerTextOpacity?: number;
 }
 
 export const defaultStrokeWidth = 2;
+export const opaquePercent = 100;
 export const defaultMarkerColors = { markerFillColor: "#ffffff", markerTextColor: "#0b253d" };
-export type NumericStyleProperty = "strokeWidth" | "markerDiameter";
+export const colorOpacityProperty = {
+  color: "colorOpacity", markerStrokeColor: "markerStrokeOpacity",
+  markerFillColor: "markerFillOpacity", markerTextColor: "markerTextOpacity",
+} as const;
+const opacityStyleProperties = Object.values(colorOpacityProperty);
+type OpacityStyleProperty = typeof opacityStyleProperties[number];
+type NumericStyleProperty = OpacityStyleProperty | "regionStrokeWidth" | "markerStrokeWidth" | "markerDiameter";
 export type StyleEdit = { kind: "style"; id?: string; imageBasis?: string } & (
-  | { property: "color" | "markerStrokeColor" | "markerFillColor" | "markerTextColor"; value: string }
+  | { property: keyof typeof colorOpacityProperty; value: string; opacity?: number }
   | { property: "lineStyle"; value: LineStyle }
   | { property: NumericStyleProperty; value: number | null }
 );
@@ -120,8 +133,22 @@ function isPositiveNumber(value: unknown): value is number {
   return isFiniteNumber(value) && value > 0;
 }
 
+function isOpacityStyleProperty(value: unknown): value is OpacityStyleProperty {
+  return opacityStyleProperties.some(property => property === value);
+}
+
+function isColorStyleProperty(value: unknown): value is keyof typeof colorOpacityProperty {
+  return typeof value === "string" && Object.hasOwn(colorOpacityProperty, value);
+}
+
+export function isOpacity(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0 && value <= opaquePercent;
+}
+
 function isOptionalSizeStyle(style: Record<string, unknown>, size: Size): boolean {
   return (style.strokeWidth === undefined || isPositiveNumber(style.strokeWidth)) &&
+    (style.regionStrokeWidth === undefined || isPositiveNumber(style.regionStrokeWidth)) &&
+    (style.markerStrokeWidth === undefined || isPositiveNumber(style.markerStrokeWidth)) &&
     (style.markerDiameter === undefined || style.markerDiameter === null ||
       (isPositiveNumber(style.markerDiameter) && style.markerDiameter <= Math.min(size.width, size.height)));
 }
@@ -149,10 +176,11 @@ function isColor(value: unknown): value is string {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
 }
 
-function hasValidMarkerColors(style: Record<string, unknown>): boolean {
+function hasValidOptionalColors(style: Record<string, unknown>): boolean {
   return (style.markerStrokeColor === undefined || isColor(style.markerStrokeColor)) &&
     (style.markerFillColor === undefined || isColor(style.markerFillColor)) &&
-    (style.markerTextColor === undefined || isColor(style.markerTextColor));
+    (style.markerTextColor === undefined || isColor(style.markerTextColor)) &&
+    opacityStyleProperties.every(property => style[property] === undefined || isOpacity(style[property]));
 }
 
 export function isLineStyle(value: unknown): value is LineStyle {
@@ -201,7 +229,7 @@ function isItem(value: unknown, size: Size): value is AnnotationItem {
     (value.style === undefined || (isRecord(value.style) &&
       (value.style.color === undefined || isColor(value.style.color)) &&
       (value.style.lineStyle === undefined || isLineStyle(value.style.lineStyle)) &&
-      hasValidMarkerColors(value.style) && isOptionalSizeStyle(value.style, size)));
+      hasValidOptionalColors(value.style) && isOptionalSizeStyle(value.style, size)));
 }
 
 export function parseAnnotation(text: string): AnnotationDocument {
@@ -213,7 +241,7 @@ export function parseAnnotation(text: string): AnnotationDocument {
   if (!isRelativeImagePath(imagePath) || !isIdentity(confirmedImage) ||
       !isSize(coordinateSize) || typeof coordinateReviewPending !== "boolean" ||
       !isInteger(highestIssuedNumber, 0) || !isRecord(style) ||
-      !isColor(style.color) || !isLineStyle(style.lineStyle) || !hasValidMarkerColors(style) ||
+      !isColor(style.color) || !isLineStyle(style.lineStyle) || !hasValidOptionalColors(style) ||
       !isOptionalSizeStyle(style, coordinateSize) ||
       !Array.isArray(items) || !items.every((item): item is AnnotationItem => isItem(item, coordinateSize))) {
     throw new Error("原画像の情報、座標、スタイル、項目IDの形式を確認してください。");
@@ -240,9 +268,17 @@ export function newAnnotation(imagePath: string, image: ImageIdentity, defaults?
     lineStyle: isLineStyle(settings.lineStyle) ? settings.lineStyle : "solid",
   };
   if (isPositiveNumber(settings.strokeWidth)) style.strokeWidth = settings.strokeWidth;
+  for (const property of ["regionStrokeWidth", "markerStrokeWidth"] as const) {
+    const width = settings[property];
+    if (isPositiveNumber(width)) style[property] = width;
+  }
   if (isColor(settings.markerStrokeColor)) style.markerStrokeColor = settings.markerStrokeColor;
   if (isColor(settings.markerFillColor)) style.markerFillColor = settings.markerFillColor;
   if (isColor(settings.markerTextColor)) style.markerTextColor = settings.markerTextColor;
+  for (const property of opacityStyleProperties) {
+    const opacity = settings[property];
+    if (isOpacity(opacity)) style[property] = opacity;
+  }
   if (isPositiveNumber(settings.markerDiameter)) {
     style.markerDiameter = Math.min(settings.markerDiameter, image.width, image.height);
   }
@@ -287,13 +323,14 @@ export function isEdit(value: unknown): value is Edit {
   }
   if (value.kind === "style") {
     if (value.id !== undefined && !isItemId(value.id)) return false;
-    if (value.property === "strokeWidth" || value.property === "markerDiameter") {
+    if (isColorStyleProperty(value.property)) {
+      return isColor(value.value) && (value.opacity === undefined || isOpacity(value.opacity));
+    }
+    if (value.opacity !== undefined) return false;
+    if (value.property === "regionStrokeWidth" || value.property === "markerStrokeWidth" || value.property === "markerDiameter") {
       return value.value === null || isPositiveNumber(value.value);
     }
-    if (value.property === "color" || value.property === "markerStrokeColor" ||
-        value.property === "markerFillColor" || value.property === "markerTextColor") {
-      return isColor(value.value);
-    }
+    if (isOpacityStyleProperty(value.property)) return value.value === null || isOpacity(value.value);
     if (value.property === "lineStyle") return isLineStyle(value.value);
     return false;
   }
@@ -507,20 +544,30 @@ function arrangeItems(items: Map<string, AnnotationItem>, edit: PlacementEdit, s
 }
 
 export function applyStyleValue(style: Partial<ShapeStyle>, edit: StyleEdit): void {
-  if (edit.value === null) delete style[edit.property];
+  if (edit.property === "regionStrokeWidth" || edit.property === "markerStrokeWidth") {
+    style[edit.property] = edit.value ?? defaultStrokeWidth;
+  } else if (edit.value === null) delete style[edit.property];
   else Object.assign(style, { [edit.property]: edit.value });
+  if ("opacity" in edit && edit.opacity !== undefined) style[colorOpacityProperty[edit.property]] = edit.opacity;
 }
 
 export function resolvedItemStyle(common: ShapeStyle, overrides?: Partial<ShapeStyle>) {
   const style = { ...common, ...overrides };
+  const commonStrokeWidth = common.strokeWidth ?? defaultStrokeWidth;
+  const itemStrokeWidth = overrides?.strokeWidth;
   return {
     ...overrides,
     color: style.color,
+    colorOpacity: style.colorOpacity ?? opaquePercent,
     lineStyle: style.lineStyle,
     markerStrokeColor: style.markerStrokeColor ?? style.color,
+    markerStrokeOpacity: style.markerStrokeOpacity ?? opaquePercent,
     markerFillColor: style.markerFillColor ?? defaultMarkerColors.markerFillColor,
+    markerFillOpacity: style.markerFillOpacity ?? opaquePercent,
     markerTextColor: style.markerTextColor ?? defaultMarkerColors.markerTextColor,
-    strokeWidth: style.strokeWidth ?? defaultStrokeWidth,
+    markerTextOpacity: style.markerTextOpacity ?? opaquePercent,
+    regionStrokeWidth: overrides?.regionStrokeWidth ?? itemStrokeWidth ?? common.regionStrokeWidth ?? commonStrokeWidth,
+    markerStrokeWidth: overrides?.markerStrokeWidth ?? itemStrokeWidth ?? common.markerStrokeWidth ?? commonStrokeWidth,
     markerDiameter: style.markerDiameter ?? null,
   };
 }
@@ -532,7 +579,7 @@ export function updatedItemStyle(
   const style = resolvedItemStyle(common, overrides);
   if (edit.kind === "style") {
     if (edit.property === "markerDiameter") style.markerDiameter = edit.value;
-    else if (edit.property === "strokeWidth") style.strokeWidth = edit.value ?? defaultStrokeWidth;
+    else if (isOpacityStyleProperty(edit.property) && edit.value === null) style[edit.property] = opaquePercent;
     else applyStyleValue(style, edit);
   }
   return style;

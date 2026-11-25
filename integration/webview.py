@@ -57,7 +57,7 @@ def exercise(page, panel, file):
     expect(picker).to_be_disabled()
     expect(picker_style).to_have_css("opacity", align.evaluate("button => getComputedStyle(button).opacity"))
     expect(picker).to_have_css("background-color", align.evaluate("button => getComputedStyle(button).backgroundColor"))
-    name.focus()
+    name.click()
     expect(picker).to_be_enabled()
     expect(picker_style).to_have_css("opacity", "1")
     expect(picker).to_have_css("background-color", zoom_in.evaluate("button => getComputedStyle(button).backgroundColor"))
@@ -155,7 +155,32 @@ def exercise(page, panel, file):
 def exercise_styles(panel, file, png, save_key):
     rect = panel.locator("rect[data-drag=move]")
     marker = panel.locator("circle[data-drag=marker]")
+    label = panel.locator(".marker-text")
     row_name = panel.locator("#rows .row-name")
+    color_dialog = panel.locator("#color-dialog")
+    hex_field = color_dialog.locator("#color-hex")
+    opacity_field = color_dialog.locator("#color-opacity")
+
+    def set_number(selector, value):
+        field = panel.locator(selector)
+        field.fill(str(value))
+        field.press("Enter")
+
+    def set_color(selector, color=None, opacity=None):
+        panel.locator(selector).click()
+        expect(color_dialog).to_be_visible()
+        if color is not None:
+            hex_field.fill(color)
+        if opacity is not None:
+            opacity_field.fill(str(opacity))
+        color_dialog.get_by_role("button", name="確定").click()
+        expect(color_dialog).to_be_hidden()
+
+    def check_opacities(values):
+        for shape, attribute, value in zip((rect, marker, marker, label),
+                                           ("stroke-opacity", "stroke-opacity", "fill-opacity", "fill-opacity"), values):
+            expect(shape).to_have_attribute(attribute, value)
+
     row_name.focus()
     panel.locator("#image-style-toggle").click()
     item_style = panel.get_by_role("checkbox", name="項目スタイルの個別設定", exact=True)
@@ -165,10 +190,29 @@ def exercise_styles(panel, file, png, save_key):
     expect(item_fields).to_be_hidden()
     common_color = panel.locator("#image-marker-stroke")
     item_color = panel.locator("#item-marker-stroke")
-    item_fill = panel.locator("#item-marker-fill")
-    item_text = panel.locator("#item-marker-text")
-    expect(common_color).to_have_value("#113a60")
-    common_color.fill("#008040")
+    expect(common_color).to_have_attribute("title", "#113a60 · 不透明度 100%")
+    common_color.click()
+    expect(color_dialog).to_be_visible()
+    expect(hex_field).to_have_value("#113a60")
+    expect(opacity_field).to_have_value("100")
+    preview = color_dialog.locator("#color-preview > span")
+    expect(preview).to_have_css("background-color", "rgb(17, 58, 96)")
+    plane = color_dialog.locator("#color-plane")
+    plane.click(position={"x": 15, "y": 15})
+    picked = hex_field.input_value()
+    assert picked != "#113a60"
+    plane.press("Shift+ArrowRight")
+    expect(hex_field).not_to_have_value(picked)
+    opacity_field.fill("37.5")
+    expect(color_dialog.locator("#color-opacity-slider")).to_have_value("37.5")
+    expect(preview).to_have_css("opacity", "0.375")
+    color_dialog.locator("#color-opacity-slider").press("Home")
+    expect(opacity_field).to_have_value("0")
+    expect(preview).to_have_css("opacity", "0")
+    hex_field.press("Escape")
+    expect(color_dialog).to_be_hidden()
+    expect(common_color).to_have_attribute("title", "#113a60 · 不透明度 100%")
+    set_color("#image-marker-stroke", "#008040")
     common_line = panel.locator("#image-line")
     common_line.select_option("dashed")
     expect(rect).to_have_attribute("stroke-dasharray", "8 6")
@@ -176,22 +220,30 @@ def exercise_styles(panel, file, png, save_key):
     common_width.fill("6")
     common_width.press("Enter")
     expect(rect).to_have_attribute("stroke-dasharray", "24 18")
+    expect(marker).to_have_attribute("stroke-width", "2")
+    set_number("#image-marker-stroke-width", 3)
+    expect(marker).to_have_attribute("stroke-width", "3")
+    expect(rect).to_have_attribute("stroke-width", "6")
     expect(marker).to_have_css("stroke-dasharray", "none")
     common_line.select_option("dotted")
     expect(rect).to_have_attribute("stroke-dasharray", "0 12")
     expect(rect).to_have_css("stroke-linecap", "round")
     expect(marker).to_have_css("stroke-dasharray", "none")
     expect(marker).to_have_attribute("stroke", "#008040")
+    check_opacities(("1", "1", "1", "1"))
+    for color, value in zip(("color", "marker-stroke", "marker-fill", "marker-text"), (50, 75, 40, 25)):
+        set_color(f"#image-{color}", opacity=value)
+    check_opacities(("0.5", "0.75", "0.4", "0.25"))
 
     item_style.check()
     expect(item_fields).to_be_visible()
     expect(item_fields.get_by_role("checkbox")).to_have_count(0)
     expect(rect_color).to_be_enabled()
-    expect(rect_color).to_have_value("#113a60")
-    expect(item_color).to_have_value("#008040")
-    rect_color.fill("#446688")
+    expect(rect_color).to_have_attribute("title", "#113a60 · 不透明度 50%")
+    expect(item_color).to_have_attribute("title", "#008040 · 不透明度 75%")
+    set_color("#item-color", "#446688")
     expect(rect).to_have_attribute("stroke", "#446688")
-    common_color.fill("#005020")
+    set_color("#image-marker-stroke", "#005020")
     expect(marker).to_have_attribute("stroke", "#008040")
 
     item_line = panel.locator("#item-line")
@@ -202,13 +254,19 @@ def exercise_styles(panel, file, png, save_key):
     item_width.fill("10")
     item_width.press("Enter")
     expect(rect).to_have_attribute("stroke-dasharray", "40 30")
+    expect(marker).to_have_attribute("stroke-width", "3")
+    set_number("#item-marker-stroke-width", 4)
+    expect(marker).to_have_attribute("stroke-width", "4")
+    expect(rect).to_have_attribute("stroke-width", "10")
     expect(marker).to_have_css("stroke-dasharray", "none")
-    item_color.fill("#d12070")
-    item_fill.fill("#f2e612")
-    item_text.fill("#1a237e")
+    set_color("#item-marker-stroke", "#d12070", 90)
+    set_color("#item-marker-fill", "#f2e612", 60)
+    set_color("#item-marker-text", "#1a237e", 50)
     expect(marker).to_have_attribute("stroke", "#d12070")
     expect(marker).to_have_attribute("fill", "#f2e612")
-    expect(panel.locator(".marker-text")).to_have_attribute("fill", "#1a237e")
+    expect(label).to_have_attribute("fill", "#1a237e")
+    set_color("#item-color", opacity=0)
+    check_opacities(("0", "0.9", "0.6", "0.5"))
     item_diameter = panel.locator("#item-marker-diameter")
     item_diameter.fill("18")
     item_diameter.press("Enter")
@@ -221,31 +279,51 @@ def exercise_styles(panel, file, png, save_key):
     expect(marker).to_have_attribute("stroke", "#005020")
     expect(marker).to_have_attribute("fill", "#ffffff")
     expect(marker).to_have_attribute("r", "7")
-    expect(panel.locator(".marker-text")).to_have_attribute("fill", "#0b253d")
+    expect(label).to_have_attribute("fill", "#0b253d")
+    check_opacities(("0.5", "0.75", "0.4", "0.25"))
+    expect(marker).to_have_attribute("stroke-width", "3")
     item_style.check()
     expect(item_fields).to_be_visible()
-    expect(rect_color).to_have_value("#113a60")
-    expect(item_color).to_have_value("#005020")
-    item_color.fill("#d12070")
+    expect(rect_color).to_have_attribute("title", "#113a60 · 不透明度 50%")
+    expect(item_color).to_have_attribute("title", "#005020 · 不透明度 75%")
+    set_color("#item-marker-stroke", "#d12070", 50)
     item_width.fill("10")
     item_width.press("Enter")
+    set_number("#item-marker-stroke-width", 4)
+    set_color("#item-marker-fill", opacity=0)
+    set_color("#item-marker-text", opacity=0)
     expect(rect).to_have_attribute("stroke-dasharray", "0 20")
     expect(marker).to_have_attribute("stroke", "#d12070")
     expect(marker).to_have_css("stroke-dasharray", "none")
     row_name.press(save_key)
 
+    common_style = {"color": "#113a60", "lineStyle": "dotted", "regionStrokeWidth": 6, "markerStrokeWidth": 3,
+                    "colorOpacity": 50, "markerStrokeColor": "#005020", "markerStrokeOpacity": 75,
+                    "markerFillOpacity": 40, "markerTextOpacity": 25}
+
     def saved_styles():
         try:
             saved = json.loads(file.read_text(encoding="utf-8-sig"))
-            return (saved["style"].get("markerStrokeColor") == "#005020" and
+            return (saved["style"] == common_style and
                     saved["items"][0].get("style") ==
-                    {"color": "#113a60", "markerStrokeColor": "#d12070", "markerFillColor": "#ffffff",
-                     "markerTextColor": "#0b253d", "lineStyle": "dotted", "strokeWidth": 10,
-                     "markerDiameter": None})
+                    {"color": "#113a60", "colorOpacity": 50, "markerStrokeColor": "#d12070", "markerStrokeOpacity": 50,
+                     "markerFillColor": "#ffffff", "markerFillOpacity": 0, "markerTextColor": "#0b253d", "markerTextOpacity": 0,
+                     "lineStyle": "dotted", "regionStrokeWidth": 10, "markerStrokeWidth": 4, "markerDiameter": None})
         except (json.JSONDecodeError, PermissionError):
             return False
 
     wait_for(saved_styles, "common and item styles on disk")
+    panel.get_by_role("button", name="新規画像の既定スタイルにする").click()
+    settings_file = file.parent.parent / "profile" / "User" / "settings.json"
+
+    def saved_default_style():
+        try:
+            settings = json.loads(settings_file.read_text(encoding="utf-8-sig"))
+            return settings.get("screenSpecAnnotator.defaultStyle") == common_style
+        except (FileNotFoundError, json.JSONDecodeError, PermissionError):
+            return False
+
+    wait_for(saved_default_style, "common style saved as the VS Code default")
     png.unlink()
     panel.get_by_role("button", name="PNGを出力").click()
     wait_for(png.is_file, "PNG with dotted rectangle and solid marker")
@@ -270,14 +348,18 @@ def exercise_styles(panel, file, png, save_key):
             return points.map(([x, y]) => Array.from(context.getImageData(x, y, 1, 1).data));
         };
         const dot = [[40, 20], [36, 20], [40, 16], [44, 24], [50, 20]];
-        const marker = [[72, 20], [65, 27], [65, 13], [58, 20]];
+        const marker = [[72, 20], [65, 27], [65, 13], [65, 10], [65, 20]];
         return { svg: pixels(image, dot).map(pixel => pixel[3]),
                  png: pixels(png, dot), marker: pixels(png, marker) };
     }""", base64.b64encode(png.read_bytes()).decode("ascii"))
-    assert pixels["svg"] == [255, 255, 255, 0, 0], pixels
-    assert pixels["png"] == [[17, 58, 96, 255]] * 3 + [[0, 0, 0, 255]] * 2, pixels
-    assert pixels["marker"] == [[209, 32, 112, 255]] * 4, pixels
+    assert all(alpha in (127, 128) for alpha in pixels["svg"][:3]), pixels
+    assert pixels["svg"][3:] == [0, 0], pixels
+    assert all(abs(pixel[0] - 8.5) <= 0.5 and pixel[1:] == [29, 48, 255] for pixel in pixels["png"][:3]), pixels
+    assert pixels["png"][3:] == [[0, 0, 0, 255]] * 2, pixels
+    assert all(abs(pixel[0] - 104.5) <= 0.5 and pixel[1:] == [16, 56, 255] for pixel in pixels["marker"][:3]), pixels
+    assert pixels["marker"][3:] == [[0, 0, 0, 255]] * 2, pixels
 
+    set_color("#item-color", opacity=100)
     item_line.select_option("dashed")
     expect(rect).to_have_attribute("stroke-dasharray", "40 30")
     row_name.press(save_key)
@@ -305,7 +387,7 @@ def exercise_numbering(panel, file):
     expect(first_number).to_have_attribute("aria-pressed", "true")
     first_number.dblclick()
     number = panel.get_by_role("spinbutton", name="1番の新しい番号")
-    expect(panel.locator("dialog")).not_to_be_visible()
+    expect(panel.locator("#number-dialog")).not_to_be_visible()
     number.fill("11")
     number.press("Escape")
     expect(first_number).to_be_focused()
