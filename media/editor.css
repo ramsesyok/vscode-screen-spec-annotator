@@ -86,10 +86,10 @@ button:disabled, .marker-position-picker:has(> select:disabled) { opacity: .55; 
 #viewport.pan:active { cursor: grabbing; }
 #surface { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 #original { display: block; pointer-events: none; }
-#annotations { position: absolute; inset: 0; width: 100%; height: 100%; }
+#annotations { --reference-stroke-unit: 1px; position: absolute; inset: 0; width: 100%; height: 100%; }
 .region, .marker, .handle, .selection-halo, .selection-outline { vector-effect: non-scaling-stroke; }
 .region { fill: transparent; cursor: move; }
-.selection-halo, .selection-outline {
+.selection-halo, .selection-outline, .region-reference-halo, .region-reference {
   fill: none;
   pointer-events: none;
   stroke-linejoin: round;
@@ -97,6 +97,11 @@ button:disabled, .marker-position-picker:has(> select:disabled) { opacity: .55; 
 .selection-halo { stroke: #fff; stroke-width: 5; }
 .selection-outline { stroke: #1463d6; stroke-width: 2.5; stroke-dasharray: 6 3; }
 rect.selection-outline { fill: #1463d6; fill-opacity: .12; }
+.region-reference-halo, .region-reference {
+  stroke-dasharray: calc(4 * var(--reference-stroke-unit)) calc(3 * var(--reference-stroke-unit));
+}
+.region-reference-halo { stroke: #fff; stroke-width: calc(3.5 * var(--reference-stroke-unit)); }
+.region-reference { stroke: #1463d6; stroke-width: calc(1.5 * var(--reference-stroke-unit)); }
 .marker { cursor: move; }
 .marker-text { text-anchor: middle; dominant-baseline: central; font-weight: 700; pointer-events: none; }
 .handle { fill: #fff; stroke: #097ee3; stroke-width: 2; cursor: crosshair; }

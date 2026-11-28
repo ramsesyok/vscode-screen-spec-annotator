@@ -1011,6 +1011,7 @@ function renderAnnotations(): void {
   const resizeEnabled = selection.region.size === 1 && selectedItems().length === 1 &&
     mode !== "pan" && hasEditableGeometry();
   const markers = svg("g", {});
+  const referenceOutlines: SVGRectElement[] = [];
   const selectedRegions: SVGGElement[] = [];
   const selectedMarkers: SVGGElement[] = [];
   for (const item of data.items) {
@@ -1032,6 +1033,12 @@ function renderAnnotations(): void {
       "stroke-opacity": style.colorOpacity / opaquePercent,
       "stroke-dasharray": dash.join(" ") || "none", "stroke-linecap": cap, class: "region", "data-drag": "move" }));
     if (regionSelected) appendSelectionHighlight(group, "rect", { ...rect });
+    else if (markerSelected && style.colorOpacity === 0) {
+      referenceOutlines.push(
+        svg("rect", { ...rect, class: "region-reference-halo", "aria-hidden": "true" }),
+        svg("rect", { ...rect, class: "region-reference", "aria-hidden": "true" }),
+      );
+    }
     const radius = markerRadius(item.number, data.coordinateSize, style.markerDiameter ?? undefined);
     const circle = { cx: marker.x, cy: marker.y, r: radius };
     const markerShape = svg("circle", { ...circle, stroke: style.markerStrokeColor, "stroke-width": style.markerStrokeWidth,
@@ -1065,7 +1072,7 @@ function renderAnnotations(): void {
     else annotations.append(group);
   }
   markers.append(...selectedMarkers);
-  annotations.append(...selectedRegions, markers);
+  annotations.append(...referenceOutlines, ...selectedRegions, markers);
   if (gesture?.kind === "add" && gesture.preview) {
     const style = resolvedItemStyle(data.style);
     annotations.append(svg("rect", { ...gesture.preview, stroke: style.color,
@@ -1079,6 +1086,7 @@ function renderAnnotations(): void {
 
 function applyTransform(): void {
   surface.style.transform = `translate(${offset.x}px, ${offset.y}px) scale(${scale})`;
+  annotations.style.setProperty("--reference-stroke-unit", `${1 / scale}px`);
   zoom.value = `${Math.round(scale * 100)}%`;
   renderAnnotations();
 }
