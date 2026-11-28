@@ -155,6 +155,8 @@ def exercise(page, panel, file):
 def exercise_styles(panel, file, png, save_key):
     rect = panel.locator("rect[data-drag=move]")
     marker = panel.locator("circle[data-drag=marker]")
+    reference = panel.locator("rect.region-reference")
+    reference_halo = panel.locator("rect.region-reference-halo")
     label = panel.locator(".marker-text")
     row_name = panel.locator("#rows .row-name")
     color_dialog = panel.locator("#color-dialog")
@@ -265,8 +267,38 @@ def exercise_styles(panel, file, png, save_key):
     expect(marker).to_have_attribute("stroke", "#d12070")
     expect(marker).to_have_attribute("fill", "#f2e612")
     expect(label).to_have_attribute("fill", "#1a237e")
+    marker.click()
+    expect(reference).to_have_count(0)
     set_color("#item-color", opacity=0)
     check_opacities(("0", "0.9", "0.6", "0.5"))
+    expect(reference).to_be_visible()
+    expect(reference_halo).to_be_visible()
+    for attribute in ("x", "y", "width", "height"):
+        geometry = rect.get_attribute(attribute)
+        expect(reference).to_have_attribute(attribute, geometry)
+        expect(reference_halo).to_have_attribute(attribute, geometry)
+    expect(reference).to_have_css("pointer-events", "none")
+    expect(reference_halo).to_have_css("pointer-events", "none")
+    expect(reference_halo).to_have_css("stroke", "rgb(255, 255, 255)")
+    panel.locator("#zoom-out").click()
+    displayed_width = reference_halo.evaluate("""outline => {
+        const svg = outline.ownerSVGElement;
+        const scale = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+        return parseFloat(getComputedStyle(outline).strokeWidth) * scale;
+    }""")
+    assert abs(displayed_width - 3.5) < 0.01
+    panel.locator("#fit").click()
+    expect(panel.locator("rect.selection-outline, circle.handle")).to_have_count(0)
+    row_selection = panel.locator('#rows input[type="checkbox"]')
+    expect(row_selection).to_have_js_property("indeterminate", True)
+    row_selection.click()
+    expect(panel.locator("rect.selection-outline")).to_be_visible()
+    expect(reference).to_have_count(0)
+    expect(reference_halo).to_have_count(0)
+    panel.locator("#viewport").press("Escape")
+    expect(reference).to_have_count(0)
+    marker.click()
+    expect(reference).to_be_visible()
     item_diameter = panel.locator("#item-marker-diameter")
     item_diameter.fill("18")
     item_diameter.press("Enter")
